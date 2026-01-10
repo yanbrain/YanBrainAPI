@@ -1,0 +1,58 @@
+import { Router, Request, Response, NextFunction } from 'express';
+import { authMiddleware } from '../middleware/authMiddleware';
+import { creditsMiddleware, consumeCredits } from '../middleware/creditsMiddleware';
+import { ElevenLabsAdapter } from '../adapters/ElevenLabsAdapter';
+import { PRODUCT_IDS } from '../config/constants';
+import { AppError } from '../errors/AppError';
+import { TTSRequest, ApiResponse, TTSResponse } from '../types/api.types';
+
+const router = Router();
+const ttsAdapter = new ElevenLabsAdapter();
+
+/**
+ * POST /api/tts
+ * Convert text to speech
+ * 
+ * Body:
+ * {
+ *   "text": "Text to convert",
+ *   "voiceId": "optional-voice-id"
+ * }
+ */
+router.post('/', 
+  authMiddleware,
+  creditsMiddleware(PRODUCT_IDS.YANAVATAR),
+  async (req: Request<{}, {}, TTSRequest>, res: Response<ApiResponse<TTSResponse>>, next: NextFunction) => {
+    try {
+      const { text, voiceId } = req.body;
+
+      // Validate input
+      if (!text || typeof text !== 'string') {
+        throw AppError.validationError('Text is required and must be a string', ['text']);
+      }
+
+      if (text.length > 5000) {
+        throw AppError.validationError('Text must be less than 5000 characters', ['text']);
+      }
+
+      // Call TTS adapter
+      const audioBuffer = await ttsAdapter.textToSpeech(text, voiceId);
+
+      // Consume credits after successful response
+      await consumeCredits(req);
+
+      // Return audio as base64
+      res.json({
+        success: true,
+        data: {
+          audio: audioBuffer.toString('base64'),
+          provider: ttsAdapter.getProviderInfo()
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+export default router;
