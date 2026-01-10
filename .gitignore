@@ -1,11 +1,26 @@
-/tmp
-/out-tsc
+# Environment variables
+.env
+.env.*
 
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Node / TypeScript
 /node_modules
+/dist
+/out-tsc
+/tmp
+
+# Logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Package managers
 /.pnp
 .pnp.js
 
+# IDEs
 .vscode/*
+.idea/*
