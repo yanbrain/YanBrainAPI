@@ -3,7 +3,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 // ============================================================================
-// Credit Costs (defined in YanBrainAPIClient)
+// Credit Costs (defined in YanBrainAPI)
 // ============================================================================
 
 export const CREDIT_COSTS = {
