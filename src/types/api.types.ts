@@ -3,26 +3,31 @@
 // ============================================================================
 
 export interface LLMRequest {
+  productId: string;
   message: string;
-  conversationHistory?: ChatMessage[];
+  embeddingFileIds?: string[];
 }
 
 export interface TTSRequest {
+  productId: string;
   text: string;
   voiceId?: string;
 }
 
 export interface ImageRequest {
-  prompt: string;
-  width?: number;
-  height?: number;
   productId: string;
-  negativePrompt?: string;
+  prompt: string;
+  imageBase64: string;
+}
+
+export interface FileUpload {
+  filename: string;
+  contentBase64: string;
 }
 
 export interface EmbeddingRequest {
-  text: string;
-  model?: string;
+  productId: string;
+  files: FileUpload[];
 }
 
 // ============================================================================
@@ -44,29 +49,23 @@ export interface ApiError {
 
 export interface LLMResponse {
   response: string;
-  model: ModelInfo;
 }
 
 export interface TTSResponse {
   audio: string; // base64 encoded
-  provider: ProviderInfo;
 }
-
 
 export interface ImageResponse {
   imageUrl: string;
-  prompt: string;
-  dimensions: {
-    width: number;
-    height: number;
-  };
-  provider: ProviderInfo;
+}
+
+export interface EmbeddingFile {
+  fileId: string;
+  text: string;
 }
 
 export interface EmbeddingResponse {
-  embedding: number[];
-  model: string;
-  dimensions: number;
+  files: EmbeddingFile[];
 }
 
 // ============================================================================

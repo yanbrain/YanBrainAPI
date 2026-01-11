@@ -2,7 +2,6 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { authMiddleware } from '../middleware/authMiddleware';
 import { creditsMiddleware, consumeCredits } from '../middleware/creditsMiddleware';
 import { OpenAIEmbeddingAdapter } from '../adapters/OpenAIEmbeddingAdapter';
-import { PRODUCT_IDS } from '../config/constants';
 import { AppError } from '../errors/AppError';
 import { EmbeddingRequest, ApiResponse, EmbeddingResponse } from '../types/api.types';
 
@@ -11,43 +10,65 @@ const embeddingAdapter = new OpenAIEmbeddingAdapter();
 
 /**
  * POST /api/embeddings
- * Generate embeddings from text
- * 
+ * Extract text from files and generate embeddings
+ *
  * Body:
  * {
- *   "text": "Text to convert to embeddings",
- *   "model": "text-embedding-3-small" // Optional
+ *   "productId": "yanAvatar",
+ *   "files": [
+ *     {
+ *       "filename": "document.pdf",
+ *       "contentBase64": "base64 encoded file content"
+ *     }
+ *   ]
  * }
  */
-router.post('/', 
+router.post('/',
   authMiddleware,
-  creditsMiddleware(PRODUCT_IDS.YANAVATAR),
   async (req: Request<{}, {}, EmbeddingRequest>, res: Response<ApiResponse<EmbeddingResponse>>, next: NextFunction) => {
     try {
-      const { text, model } = req.body;
+      const { productId, files } = req.body;
 
-      // Validate input
-      if (!text || typeof text !== 'string') {
-        throw AppError.validationError('Text is required and must be a string', ['text']);
+      // Validate productId
+      if (!productId || typeof productId !== 'string') {
+        throw AppError.validationError('productId is required and must be a string', ['productId']);
       }
 
-      if (text.length > 8000) {
-        throw AppError.validationError('Text must be less than 8000 characters', ['text']);
+      // Validate files
+      if (!files || !Array.isArray(files) || files.length === 0) {
+        throw AppError.validationError('files is required and must be a non-empty array', ['files']);
       }
 
-      // Call embedding adapter
-      const embedding = await embeddingAdapter.generateEmbedding(text, model);
+      // Validate each file
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        if (!file.filename || typeof file.filename !== 'string') {
+          throw AppError.validationError(`files[${i}].filename is required and must be a string`, [`files[${i}].filename`]);
+        }
+        if (!file.contentBase64 || typeof file.contentBase64 !== 'string') {
+          throw AppError.validationError(`files[${i}].contentBase64 is required and must be a string`, [`files[${i}].contentBase64`]);
+        }
+      }
+
+      // Apply credits middleware dynamically based on productId
+      await new Promise<void>((resolve, reject) => {
+        creditsMiddleware(productId as any)(req, res, (error?: any) => {
+          if (error) reject(error);
+          else resolve();
+        });
+      });
+
+      // Process files and extract text
+      const processedFiles = await embeddingAdapter.processFiles(files);
 
       // Consume credits after successful response
       await consumeCredits(req);
 
-      // Return embedding vector
+      // Return processed files with fileId and extracted text
       res.json({
         success: true,
         data: {
-          embedding: embedding,
-          model: model || 'text-embedding-3-small',
-          dimensions: embeddingAdapter.getDimensions(model)
+          files: processedFiles
         }
       });
     } catch (error) {

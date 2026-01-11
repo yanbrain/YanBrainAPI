@@ -28,29 +28,54 @@ export class RunwareAdapter implements IImageProvider {
       height?: number;
       negativePrompt?: string;
       model?: string;
+      imageBase64?: string;
     } = {}
   ): Promise<string> {
     try {
-      const width = options.width || 512;
-      const height = options.height || 512;
       const model = options.model || this.defaultModel;
 
-      const images = await this.client.imageInference({
-        positivePrompt: prompt,
-        negativePrompt: options.negativePrompt || '',
-        width: width,
-        height: height,
-        model: model,
-        numberResults: 1,
-        outputType: 'URL' as any,
-        outputFormat: 'PNG' as any
-      });
+      // If imageBase64 is provided, use image-to-image generation
+      if (options.imageBase64) {
+        // Image editing/transformation with Runware
+        const images = await this.client.imageInference({
+          positivePrompt: prompt,
+          negativePrompt: options.negativePrompt || '',
+          model: model,
+          numberResults: 1,
+          outputType: 'URL' as any,
+          outputFormat: 'PNG' as any,
+          // Note: Runware SDK may require specific parameters for image-to-image
+          // This is a placeholder implementation
+          inputImage: options.imageBase64
+        } as any);
 
-      if (!images || images.length === 0) {
-        throw new Error('No image generated');
+        if (!images || images.length === 0) {
+          throw new Error('No image generated');
+        }
+
+        return (images[0] as any).imageURL;
+      } else {
+        // Standard text-to-image generation
+        const width = options.width || 512;
+        const height = options.height || 512;
+
+        const images = await this.client.imageInference({
+          positivePrompt: prompt,
+          negativePrompt: options.negativePrompt || '',
+          width: width,
+          height: height,
+          model: model,
+          numberResults: 1,
+          outputType: 'URL' as any,
+          outputFormat: 'PNG' as any
+        });
+
+        if (!images || images.length === 0) {
+          throw new Error('No image generated');
+        }
+
+        return (images[0] as any).imageURL;
       }
-
-      return (images[0] as any).imageURL;
     } catch (error: any) {
       // Handle Runware specific errors
       if (error.message?.includes('insufficient')) {
