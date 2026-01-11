@@ -11,7 +11,7 @@ export function errorMiddleware(
   err: Error | AppError,
   req: Request,
   res: Response,
-  next: NextFunction
+  _next: NextFunction
 ): void {
   // Log error for debugging (in production, use proper logger)
   console.error('Error occurred:', {

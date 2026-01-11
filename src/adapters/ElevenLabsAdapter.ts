@@ -28,7 +28,7 @@ export class ElevenLabsAdapter implements ITTSProvider {
       // Call ElevenLabs API
       const audio = await this.client.textToSpeech.convert(selectedVoiceId, {
         text: text,
-        model_id: 'eleven_monolingual_v1'
+        modelId: 'eleven_monolingual_v1'
       });
 
       // Convert stream to buffer
