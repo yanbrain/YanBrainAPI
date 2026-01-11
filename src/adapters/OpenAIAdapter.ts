@@ -10,7 +10,7 @@ import { ChatMessage, ModelInfo } from '../types/api.types';
  */
 export class OpenAIAdapter implements ILLMProvider {
   private client: OpenAI;
-  private model: string = 'gpt-4o-mini'; // Cost-effective model
+  private model: string = 'gpt-4.1-mini'; // Latest cost-effective model
 
   constructor() {
     this.client = new OpenAI({
