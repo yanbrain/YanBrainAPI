@@ -33,7 +33,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.get('/health', (_req: Request, res: Response) => {
   res.json({ 
     status: 'ok', 
-    service: 'YanBrain API Client (TypeScript)',
+    service: 'YanBrain API Client',
     timestamp: new Date().toISOString(),
     version: '1.0.0'
   });
@@ -62,7 +62,7 @@ app.use(errorMiddleware);
 
 // Start server
 app.listen(PORT, () => {
-  console.log(`🚀 YanBrain API Client (TypeScript) running on port ${PORT}`);
+  console.log(`🚀 YanBrain API Client running on port ${PORT}`);
   console.log(`📍 Health check: http://localhost:${PORT}/health`);
   console.log(`🔧 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`\n✅ Available Endpoints:`);
