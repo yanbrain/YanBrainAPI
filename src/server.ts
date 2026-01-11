@@ -68,7 +68,6 @@ app.listen(PORT, () => {
   console.log(`\n✅ Available Endpoints:`);
   console.log(`   POST /api/llm - Generate text from LLM`);
   console.log(`   POST /api/tts - Text to speech`);
-  console.log(`   POST /api/stt - Speech to text`);
   console.log(`   POST /api/image - Generate images`);
   console.log(`   POST /api/embeddings - Generate embeddings`);
 });
