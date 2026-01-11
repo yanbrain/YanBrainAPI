@@ -9,7 +9,7 @@ import { ProviderInfo } from '../types/api.types';
  * Handles all Runware-specific logic and error handling
  */
 export class RunwareAdapter implements IImageProvider {
-  private client: Runware;
+  private client;
   private defaultModel: string = 'civitai:4384@128713'; // Dreamshaper 8
 
   constructor() {

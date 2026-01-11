@@ -8,7 +8,7 @@ import { AppError } from '../errors/AppError';
  */
 export async function authMiddleware(
   req: Request,
-  res: Response,
+  _res: Response,
   next: NextFunction
 ): Promise<void> {
   try {

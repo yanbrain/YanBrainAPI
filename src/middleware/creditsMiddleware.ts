@@ -9,7 +9,7 @@ import { CreditsBalanceResponse, CreditsConsumeRequest } from '../types/api.type
  * Should be used AFTER authMiddleware
  */
 export function creditsMiddleware(productId: ProductId) {
-  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  return async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
     try {
       const userId = req.user?.uid;
 
