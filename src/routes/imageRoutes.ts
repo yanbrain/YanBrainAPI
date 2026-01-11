@@ -4,6 +4,7 @@ import { creditsMiddleware, consumeCredits } from '../middleware/creditsMiddlewa
 import { RunwareAdapter } from '../adapters/RunwareAdapter';
 import { AppError } from '../errors/AppError';
 import { ImageRequest, ApiResponse, ImageResponse } from '../types/api.types';
+import { CREDIT_COSTS } from '../config/constants';
 
 const router = Router();
 const imageAdapter = new RunwareAdapter();
@@ -14,7 +15,6 @@ const imageAdapter = new RunwareAdapter();
  *
  * Body:
  * {
- *   "productId": "yanDraw",
  *   "prompt": "Description of image",
  *   "imageBase64": "base64 encoded image" // Image to edit
  * }
@@ -23,12 +23,7 @@ router.post('/',
   authMiddleware,
   async (req: Request<{}, {}, ImageRequest>, res: Response<ApiResponse<ImageResponse>>, next: NextFunction) => {
     try {
-      const { productId, prompt, imageBase64 } = req.body;
-
-      // Validate productId
-      if (!productId || typeof productId !== 'string') {
-        throw AppError.validationError('productId is required and must be a string', ['productId']);
-      }
+      const { prompt, imageBase64 } = req.body;
 
       // Validate prompt
       if (!prompt || typeof prompt !== 'string') {
@@ -40,9 +35,11 @@ router.post('/',
         throw AppError.validationError('imageBase64 is required and must be a string', ['imageBase64']);
       }
 
-      // Apply credits middleware dynamically based on productId
+      const cost = CREDIT_COSTS.IMAGE_GENERATION;
+
+      // Apply credits middleware dynamically based on request cost
       await new Promise<void>((resolve, reject) => {
-        creditsMiddleware(productId as any)(req, res, (error?: any) => {
+        creditsMiddleware(cost)(req, res, (error?: any) => {
           if (error) reject(error);
           else resolve();
         });

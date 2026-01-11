@@ -3,19 +3,16 @@
 // ============================================================================
 
 export interface LLMRequest {
-  productId: string;
   message: string;
   embeddingFileIds?: string[];
 }
 
 export interface TTSRequest {
-  productId: string;
   text: string;
   voiceId?: string;
 }
 
 export interface ImageRequest {
-  productId: string;
   prompt: string;
   imageBase64: string;
 }
@@ -26,7 +23,6 @@ export interface FileUpload {
 }
 
 export interface EmbeddingRequest {
-  productId: string;
   files: FileUpload[];
 }
 
@@ -96,7 +92,7 @@ export interface CreditsBalanceResponse {
 }
 
 export interface CreditsConsumeRequest {
-  productId: string;
+  cost: number;
 }
 
 export interface CreditsConsumeResponse {

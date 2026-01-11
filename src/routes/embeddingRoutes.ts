@@ -4,6 +4,7 @@ import { creditsMiddleware, consumeCredits } from '../middleware/creditsMiddlewa
 import { OpenAIEmbeddingAdapter } from '../adapters/OpenAIEmbeddingAdapter';
 import { AppError } from '../errors/AppError';
 import { EmbeddingRequest, ApiResponse, EmbeddingResponse } from '../types/api.types';
+import { calculateEmbeddingCost } from '../utils/costs';
 
 const router = Router();
 const embeddingAdapter = new OpenAIEmbeddingAdapter();
@@ -14,7 +15,6 @@ const embeddingAdapter = new OpenAIEmbeddingAdapter();
  *
  * Body:
  * {
- *   "productId": "yanAvatar",
  *   "files": [
  *     {
  *       "filename": "document.pdf",
@@ -27,12 +27,7 @@ router.post('/',
   authMiddleware,
   async (req: Request<{}, {}, EmbeddingRequest>, res: Response<ApiResponse<EmbeddingResponse>>, next: NextFunction) => {
     try {
-      const { productId, files } = req.body;
-
-      // Validate productId
-      if (!productId || typeof productId !== 'string') {
-        throw AppError.validationError('productId is required and must be a string', ['productId']);
-      }
+      const { files } = req.body;
 
       // Validate files
       if (!files || !Array.isArray(files) || files.length === 0) {
@@ -50,9 +45,11 @@ router.post('/',
         }
       }
 
-      // Apply credits middleware dynamically based on productId
+      const cost = calculateEmbeddingCost(files);
+
+      // Apply credits middleware dynamically based on request cost
       await new Promise<void>((resolve, reject) => {
-        creditsMiddleware(productId as any)(req, res, (error?: any) => {
+        creditsMiddleware(cost)(req, res, (error?: any) => {
           if (error) reject(error);
           else resolve();
         });

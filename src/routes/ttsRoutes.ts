@@ -4,6 +4,7 @@ import { creditsMiddleware, consumeCredits } from '../middleware/creditsMiddlewa
 import { ElevenLabsAdapter } from '../adapters/ElevenLabsAdapter';
 import { AppError } from '../errors/AppError';
 import { TTSRequest, ApiResponse, TTSResponse } from '../types/api.types';
+import { CREDIT_COSTS } from '../config/constants';
 
 const router = Router();
 const ttsAdapter = new ElevenLabsAdapter();
@@ -14,7 +15,6 @@ const ttsAdapter = new ElevenLabsAdapter();
  *
  * Body:
  * {
- *   "productId": "yanAvatar",
  *   "text": "Text to convert",
  *   "voiceId": "optional-voice-id"
  * }
@@ -23,12 +23,7 @@ router.post('/',
   authMiddleware,
   async (req: Request<{}, {}, TTSRequest>, res: Response<ApiResponse<TTSResponse>>, next: NextFunction) => {
     try {
-      const { productId, text, voiceId } = req.body;
-
-      // Validate productId
-      if (!productId || typeof productId !== 'string') {
-        throw AppError.validationError('productId is required and must be a string', ['productId']);
-      }
+      const { text, voiceId } = req.body;
 
       // Validate text
       if (!text || typeof text !== 'string') {
@@ -39,9 +34,11 @@ router.post('/',
         throw AppError.validationError('Text must be less than 5000 characters', ['text']);
       }
 
-      // Apply credits middleware dynamically based on productId
+      const cost = CREDIT_COSTS.TTS_REQUEST;
+
+      // Apply credits middleware dynamically based on request cost
       await new Promise<void>((resolve, reject) => {
-        creditsMiddleware(productId as any)(req, res, (error?: any) => {
+        creditsMiddleware(cost)(req, res, (error?: any) => {
           if (error) reject(error);
           else resolve();
         });
