@@ -11,14 +11,8 @@ import { randomUUID } from 'crypto';
  */
 export class OpenAIEmbeddingAdapter implements IEmbeddingProvider {
   private client: OpenAI;
-  private defaultModel: string = 'text-embedding-3-small';
-  
-  // Model dimensions mapping
-  private modelDimensions: Record<string, number> = {
-    'text-embedding-3-small': 1536,
-    'text-embedding-3-large': 3072,
-    'text-embedding-ada-002': 1536
-  };
+  private readonly model: string = 'text-embedding-3-small';
+  private readonly dimensions: number = 1536;
 
   constructor() {
     this.client = new OpenAI({
@@ -27,17 +21,15 @@ export class OpenAIEmbeddingAdapter implements IEmbeddingProvider {
   }
 
   /**
-   * Generate embeddings using OpenAI
+   * Generate embeddings using OpenAI text-embedding-3-small model only
    */
   async generateEmbedding(
     text: string,
     model?: string
   ): Promise<number[]> {
     try {
-      const selectedModel = model || this.defaultModel;
-
       const response = await this.client.embeddings.create({
-        model: selectedModel,
+        model: this.model,
         input: text,
         encoding_format: 'float'
       });
@@ -48,7 +40,7 @@ export class OpenAIEmbeddingAdapter implements IEmbeddingProvider {
       if (error.code === 'insufficient_quota') {
         throw AppError.quotaExceededError('openai', 'OpenAI account has no credits left');
       }
-      
+
       if (error.status === 429) {
         throw AppError.rateLimitError('openai', 'OpenAI rate limit exceeded');
       }
@@ -63,11 +55,10 @@ export class OpenAIEmbeddingAdapter implements IEmbeddingProvider {
   }
 
   /**
-   * Get embedding dimensions for the model
+   * Get embedding dimensions (always 1536 for text-embedding-3-small)
    */
   getDimensions(model?: string): number {
-    const selectedModel = model || this.defaultModel;
-    return this.modelDimensions[selectedModel] || 1536;
+    return this.dimensions;
   }
 
   /**
@@ -76,16 +67,16 @@ export class OpenAIEmbeddingAdapter implements IEmbeddingProvider {
   getProviderInfo(): ProviderInfo {
     return {
       provider: 'OpenAI',
-      defaultModel: this.defaultModel,
-      availableModels: this.getAvailableModels()
+      defaultModel: this.model,
+      availableModels: [this.model]
     };
   }
 
   /**
-   * Get available embedding models
+   * Get available embedding models (only text-embedding-3-small)
    */
   getAvailableModels(): string[] {
-    return Object.keys(this.modelDimensions);
+    return [this.model];
   }
 
   /**
