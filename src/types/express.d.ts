@@ -8,7 +8,7 @@ declare global {
         email?: string;
         emailVerified?: boolean;
       };
-      productId?: string;
+      creditCost?: number;
       firebaseToken?: string;
     }
   }

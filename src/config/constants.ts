@@ -3,26 +3,16 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 // ============================================================================
-// Product IDs (must match YanBrainServer)
+// Credit Costs (defined in YanBrainAPIClient)
 // ============================================================================
 
-export const PRODUCT_IDS = {
-  YANAVATAR: 'yanAvatar',
-  YANDRAW: 'yanDraw',
-  YANPHOTOBOOTH: 'yanPhotobooth'
+export const CREDIT_COSTS = {
+  LLM_REQUEST: 1,
+  IMAGE_GENERATION: 10,
+  TTS_REQUEST: 2,
+  EMBEDDING_MIN: 5,
+  EMBEDDING_CREDITS_PER_1K_CHARS: 1
 } as const;
-
-export type ProductId = typeof PRODUCT_IDS[keyof typeof PRODUCT_IDS];
-
-// ============================================================================
-// Credit Costs (reference only - actual costs defined in YanBrainServer)
-// ============================================================================
-
-export const CREDIT_COSTS: Record<ProductId, number> = {
-  [PRODUCT_IDS.YANAVATAR]: 1,
-  [PRODUCT_IDS.YANDRAW]: 1,
-  [PRODUCT_IDS.YANPHOTOBOOTH]: 1
-};
 
 // ============================================================================
 // YanBrainServer API Configuration

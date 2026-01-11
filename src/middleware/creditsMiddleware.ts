@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import axios from 'axios';
-import { YANBRAIN_SERVER, ProductId } from '../config/constants';
+import { YANBRAIN_SERVER } from '../config/constants';
 import { AppError } from '../errors/AppError';
 import { CreditsBalanceResponse, CreditsConsumeRequest } from '../types/api.types';
 
@@ -8,7 +8,7 @@ import { CreditsBalanceResponse, CreditsConsumeRequest } from '../types/api.type
  * Middleware to check and consume credits from YanBrainServer
  * Should be used AFTER authMiddleware
  */
-export function creditsMiddleware(productId: ProductId) {
+export function creditsMiddleware(cost: number) {
   return async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
     try {
       const userId = req.user?.uid;
@@ -32,12 +32,12 @@ export function creditsMiddleware(productId: ProductId) {
 
       const { creditsBalance } = balanceResponse.data;
 
-      if (creditsBalance < 1) {
-        throw AppError.insufficientCredits(1, creditsBalance);
+      if (creditsBalance < cost) {
+        throw AppError.insufficientCredits(cost, creditsBalance);
       }
 
-      // Store productId for later consumption
-      req.productId = productId;
+      // Store cost for later consumption
+      req.creditCost = cost;
       req.firebaseToken = token;
 
       next();
@@ -59,13 +59,13 @@ export function creditsMiddleware(productId: ProductId) {
  */
 export async function consumeCredits(req: Request): Promise<boolean> {
   try {
-    const { productId, firebaseToken } = req;
+    const { creditCost, firebaseToken } = req;
 
-    if (!productId || !firebaseToken) {
-      throw new Error('Missing productId or firebaseToken');
+    if (!creditCost || !firebaseToken) {
+      throw new Error('Missing creditCost or firebaseToken');
     }
 
-    const requestBody: CreditsConsumeRequest = { productId };
+    const requestBody: CreditsConsumeRequest = { cost: creditCost };
 
     await axios.post(
       `${YANBRAIN_SERVER.BASE_URL}${YANBRAIN_SERVER.ENDPOINTS.CREDITS_CONSUME}`,
