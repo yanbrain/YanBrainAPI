@@ -10,7 +10,7 @@ import { ProviderInfo } from '../types/api.types';
  */
 export class RunwareAdapter implements IImageProvider {
   private client;
-  private defaultModel: string = 'civitai:4384@128713'; // Dreamshaper 8
+    private defaultModel: string = 'gemini:GEMINI_2_5_FLASH_IMAGE';
 
   constructor() {
     this.client = new Runware({

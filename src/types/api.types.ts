@@ -52,10 +52,6 @@ export interface TTSResponse {
   provider: ProviderInfo;
 }
 
-export interface STTResponse {
-  text: string;
-  provider: ProviderInfo;
-}
 
 export interface ImageResponse {
   imageUrl: string;

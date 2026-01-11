@@ -9,7 +9,6 @@ import { errorMiddleware } from './middleware/errorMiddleware';
 // Import routes
 import llmRoutes from './routes/llmRoutes';
 import ttsRoutes from './routes/ttsRoutes';
-import sttRoutes from './routes/sttRoutes';
 import imageRoutes from './routes/imageRoutes';
 import embeddingRoutes from './routes/embeddingRoutes';
 
@@ -43,7 +42,6 @@ app.get('/health', (_req: Request, res: Response) => {
 // API Routes
 app.use('/api/llm', llmRoutes);
 app.use('/api/tts', ttsRoutes);
-app.use('/api/stt', sttRoutes);
 app.use('/api/image', imageRoutes);
 app.use('/api/embeddings', embeddingRoutes);
 

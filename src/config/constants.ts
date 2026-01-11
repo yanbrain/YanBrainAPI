@@ -43,8 +43,7 @@ export const YANBRAIN_SERVER = {
 export const PROVIDERS = {
   LLM: process.env.LLM_PROVIDER || 'openai',
   TTS: process.env.TTS_PROVIDER || 'elevenlabs',
-  STT: process.env.STT_PROVIDER || 'wit',
-  IMAGE: process.env.IMAGE_PROVIDER || 'runware',
+    IMAGE: process.env.IMAGE_PROVIDER || 'runware',
   EMBEDDING: process.env.EMBEDDING_PROVIDER || 'openai'
 } as const;
 
@@ -55,7 +54,6 @@ export const PROVIDERS = {
 export const API_KEYS = {
   OPENAI: process.env.OPENAI_API_KEY || '',
   ELEVENLABS: process.env.ELEVENLABS_API_KEY || '',
-  WIT: process.env.WIT_API_KEY || '',
   RUNWARE: process.env.RUNWARE_API_KEY || ''
 } as const;
 
@@ -89,9 +87,6 @@ export function validateConfig(): void {
   }
   if (PROVIDERS.TTS === 'elevenlabs' && !API_KEYS.ELEVENLABS) {
     throw new Error('ELEVENLABS_API_KEY is required when TTS_PROVIDER=elevenlabs');
-  }
-  if (PROVIDERS.STT === 'wit' && !API_KEYS.WIT) {
-    throw new Error('WIT_API_KEY is required when STT_PROVIDER=wit');
   }
   if (PROVIDERS.IMAGE === 'runware' && !API_KEYS.RUNWARE) {
     throw new Error('RUNWARE_API_KEY is required when IMAGE_PROVIDER=runware');
