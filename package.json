@@ -9,7 +9,14 @@
     "dev": "tsx watch src/server.ts",
     "watch": "tsc --watch",
     "clean": "rm -rf dist",
-    "prebuild": "npm run clean"
+    "prebuild": "npm run clean",
+    "token": "tsx src/testing/generateToken.ts",
+    "test": "tsx src/testing/apiTests.ts",
+    "test:health": "tsx src/testing/apiTests.ts health",
+    "test:llm": "tsx src/testing/apiTests.ts llm",
+    "test:tts": "tsx src/testing/apiTests.ts tts",
+    "test:image": "tsx src/testing/apiTests.ts image",
+    "test:embeddings": "tsx src/testing/apiTests.ts embeddings"
   },
   "author": "Artem",
   "license": "MIT",
