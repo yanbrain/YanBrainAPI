@@ -16,9 +16,10 @@
     "test:llm": "tsx src/testing/apiTests.ts llm",
     "test:tts": "tsx src/testing/apiTests.ts tts",
     "test:image": "tsx src/testing/apiTests.ts image",
-    "test:embeddings": "tsx src/testing/embeddingTests.ts"
+    "test:embeddings": "tsx src/testing/embeddingTests.ts",
+    "test:yanAvatar": "tsx src/testing/yanAvatarTest.ts"
   },
-  "author": "Artem",
+  "author": "YanBrain",
   "license": "MIT",
   "dependencies": {
     "@elevenlabs/elevenlabs-js": "^2.28.0",

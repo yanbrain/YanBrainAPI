@@ -11,80 +11,51 @@ import { randomUUID } from 'crypto';
 const router = Router();
 const embeddingAdapter = new OpenAIEmbeddingAdapter();
 
-/**
- * POST /api/embeddings
- * Extract text from files and generate embeddings
- *
- * Body:
- * {
- *   "files": [
- *     {
- *       "filename": "document.pdf",
- *       "contentBase64": "base64 encoded file content"
- *     }
- *   ]
- * }
- */
 router.post('/',
     authMiddleware,
     async (req: Request<{}, {}, EmbeddingRequest>, res: Response<ApiResponse<EmbeddingResponse>>, next: NextFunction) => {
         try {
             const { files } = req.body;
 
-            // Validate files
             if (!files || !Array.isArray(files) || files.length === 0) {
-                throw AppError.validationError('files is required and must be a non-empty array', ['files']);
+                throw AppError.validationError('files must be a non-empty array', ['files']);
             }
 
-            // Validate each file
             for (let i = 0; i < files.length; i++) {
-                const file = files[i];
-                if (!file.filename || typeof file.filename !== 'string') {
-                    throw AppError.validationError(`files[${i}].filename is required and must be a string`, [`files[${i}].filename`]);
-                }
-                if (!file.contentBase64 || typeof file.contentBase64 !== 'string') {
-                    throw AppError.validationError(`files[${i}].contentBase64 is required and must be a string`, [`files[${i}].contentBase64`]);
+                if (!files[i].filename || !files[i].contentBase64) {
+                    throw AppError.validationError(`files[${i}] missing filename or contentBase64`, [`files[${i}]`]);
                 }
             }
 
             const cost = calculateEmbeddingCost(files);
 
-            // Apply credits middleware dynamically based on request cost
+            // Apply middleware manually for dynamic cost
             await new Promise<void>((resolve, reject) => {
                 creditsMiddleware(cost)(req, res, (error?: any) => {
-                    if (error) reject(error);
-                    else resolve();
+                    error ? reject(error) : resolve();
                 });
             });
 
-            // Process files: convert to text and generate embeddings
             const processedFiles = await Promise.all(
                 files.map(async (file) => {
-                    // Convert document to text
                     const fileBuffer = Buffer.from(file.contentBase64, 'base64');
                     const text = await convertDocumentToText(fileBuffer, file.filename);
-
-                    // Generate embedding from text
                     const embedding = await embeddingAdapter.generateEmbedding(text);
 
                     return {
                         fileId: `file_${randomUUID()}`,
                         filename: file.filename,
-                        embedding: embedding,
+                        embedding,
                         dimensions: embeddingAdapter.getDimensions()
                     };
                 })
             );
 
-            // Consume credits after successful response
             await consumeCredits(req);
 
-            // Return processed files with embeddings
             res.json({
                 success: true,
-                data: {
-                    files: processedFiles
-                }
+                data: { files: processedFiles }
             });
         } catch (error) {
             next(error);

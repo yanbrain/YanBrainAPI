@@ -4,7 +4,8 @@
 
 export interface LLMRequest {
     message: string;
-    embeddingFileIds?: string[];
+    systemPrompt?: string;
+    embeddedText?: string;
 }
 
 export interface TTSRequest {

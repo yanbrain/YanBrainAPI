@@ -4,120 +4,125 @@ import { AppError } from '../errors/AppError';
 import { API_KEYS } from '../config/constants';
 import { ProviderInfo } from '../types/api.types';
 
-/**
- * Runware implementation of ImageProvider
- * Handles all Runware-specific logic and error handling
- */
 export class RunwareAdapter implements IImageProvider {
-  private client;
+    private client;
     private defaultModel: string = 'gemini:GEMINI_2_5_FLASH_IMAGE';
+    private readonly MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB
 
-  constructor() {
-    this.client = new Runware({
-      apiKey: API_KEYS.RUNWARE
-    });
-  }
-
-  /**
-   * Generate image using Runware
-   */
-  async generateImage(
-    prompt: string,
-    options: {
-      width?: number;
-      height?: number;
-      negativePrompt?: string;
-      model?: string;
-      imageBase64?: string;
-    } = {}
-  ): Promise<string> {
-    try {
-      const model = options.model || this.defaultModel;
-
-      // If imageBase64 is provided, use image-to-image generation
-      if (options.imageBase64) {
-        // Image editing/transformation with Runware
-        const images = await this.client.imageInference({
-          positivePrompt: prompt,
-          negativePrompt: options.negativePrompt || '',
-          model: model,
-          numberResults: 1,
-          outputType: 'URL' as any,
-          outputFormat: 'PNG' as any,
-          // Note: Runware SDK may require specific parameters for image-to-image
-          // This is a placeholder implementation
-          inputImage: options.imageBase64
-        } as any);
-
-        if (!images || images.length === 0) {
-          throw new Error('No image generated');
-        }
-
-        return (images[0] as any).imageURL;
-      } else {
-        // Standard text-to-image generation
-        const width = options.width || 512;
-        const height = options.height || 512;
-
-        const images = await this.client.imageInference({
-          positivePrompt: prompt,
-          negativePrompt: options.negativePrompt || '',
-          width: width,
-          height: height,
-          model: model,
-          numberResults: 1,
-          outputType: 'URL' as any,
-          outputFormat: 'PNG' as any
+    constructor() {
+        this.client = new Runware({
+            apiKey: API_KEYS.RUNWARE
         });
-
-        if (!images || images.length === 0) {
-          throw new Error('No image generated');
-        }
-
-        return (images[0] as any).imageURL;
-      }
-    } catch (error: any) {
-      // Handle Runware specific errors
-      if (error.message?.includes('insufficient')) {
-        throw AppError.quotaExceededError('runware', 'Runware credits insufficient');
-      }
-
-      if (error.message?.includes('rate limit')) {
-        throw AppError.rateLimitError('runware', 'Runware rate limit exceeded');
-      }
-
-      if (error.message?.includes('invalid') && error.message?.includes('key')) {
-        throw AppError.providerError('runware', 'Invalid Runware API key', error);
-      }
-
-      // Generic Runware error
-      throw AppError.providerError('runware', error.message || 'Runware request failed', error);
     }
-  }
 
-  /**
-   * Get supported image sizes
-   */
-  getSupportedSizes(): Array<{ width: number; height: number }> {
-    return [
-      { width: 512, height: 512 },
-      { width: 768, height: 768 },
-      { width: 1024, height: 1024 },
-      { width: 512, height: 768 },
-      { width: 768, height: 512 }
-    ];
-  }
+    async generateImage(
+        prompt: string,
+        options: {
+            width?: number;
+            height?: number;
+            negativePrompt?: string;
+            model?: string;
+            imageBase64?: string;
+        } = {}
+    ): Promise<string> {
+        try {
+            if (!prompt || prompt.trim().length === 0) {
+                throw AppError.validationError('Prompt cannot be empty', ['prompt']);
+            }
 
-  /**
-   * Get provider information
-   */
-  getProviderInfo(): ProviderInfo {
-    return {
-      provider: 'Runware',
-      defaultModel: this.defaultModel,
-      supportedFormats: ['PNG', 'JPG', 'WEBP']
-    };
-  }
+            const model = options.model || this.defaultModel;
+
+            if (options.imageBase64) {
+                // Validate size
+                const imageSize = Buffer.from(options.imageBase64, 'base64').length;
+                if (imageSize > this.MAX_IMAGE_SIZE) {
+                    throw AppError.validationError(
+                        `Image too large: ${Math.round(imageSize / 1024 / 1024)}MB (max 10MB)`,
+                        ['imageBase64']
+                    );
+                }
+
+                console.log(`[Runware] Image-to-image: ${Math.round(imageSize / 1024)}KB`);
+
+                // Direct image-to-image with seedImage
+                const images = await this.client.imageInference({
+                    positivePrompt: prompt,
+                    negativePrompt: options.negativePrompt || '',
+                    model: model,
+                    seedImage: options.imageBase64, // Pass base64 directly
+                    strength: 0.7,
+                    numberResults: 1,
+                    outputType: 'URL',
+                    outputFormat: 'PNG'
+                } as any);
+
+                if (!images || images.length === 0 || !(images[0] as any)?.imageURL) {
+                    throw AppError.providerError('runware', 'No image generated');
+                }
+
+                console.log(`[Runware] Success`);
+                return (images[0] as any).imageURL;
+            } else {
+                // Text-to-image
+                const width = options.width || 512;
+                const height = options.height || 512;
+
+                const images = await this.client.imageInference({
+                    positivePrompt: prompt,
+                    negativePrompt: options.negativePrompt || '',
+                    width: width,
+                    height: height,
+                    model: model,
+                    numberResults: 1,
+                    outputType: 'URL',
+                    outputFormat: 'PNG'
+                } as any);
+
+                if (!images || images.length === 0 || !(images[0] as any)?.imageURL) {
+                    throw AppError.providerError('runware', 'No image generated');
+                }
+
+                console.log(`[Runware] Text-to-image success`);
+                return (images[0] as any).imageURL;
+            }
+        } catch (error: any) {
+            console.error('[Runware] Error:', error.message);
+
+            if (error instanceof AppError) throw error;
+
+            if (error.message?.includes('insufficient') || error.message?.includes('credits')) {
+                throw AppError.quotaExceededError('runware', 'Runware credits insufficient');
+            }
+
+            if (error.message?.includes('rate limit') || error.status === 429) {
+                throw AppError.rateLimitError('runware', 'Runware rate limit exceeded');
+            }
+
+            if (error.message?.includes('invalid') && error.message?.includes('key')) {
+                throw AppError.providerError('runware', 'Invalid Runware API key', error);
+            }
+
+            throw AppError.providerError('runware', error.message || 'Runware request failed', error);
+        }
+    }
+
+    getSupportedSizes(): Array<{ width: number; height: number }> {
+        return [
+            { width: 512, height: 512 },
+            { width: 768, height: 768 },
+            { width: 1024, height: 1024 },
+            { width: 512, height: 768 },
+            { width: 768, height: 512 }
+        ];
+    }
+
+    getProviderInfo(): ProviderInfo {
+        return {
+            provider: 'Runware',
+            defaultModel: this.defaultModel,
+            supportedFormats: ['PNG', 'JPG', 'WEBP']
+        };
+    }
 }
 
 export default RunwareAdapter;

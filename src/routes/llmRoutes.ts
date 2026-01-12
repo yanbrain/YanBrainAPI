@@ -9,56 +9,32 @@ import { CREDIT_COSTS } from '../config/constants';
 const router = Router();
 const llmAdapter = new OpenAIAdapter();
 
-/**
- * POST /api/llm
- * Generate text response from LLM
- *
- * Body:
- * {
- *   "message": "User's message",
- *   "embeddingFileIds": ["file_123", "file_456"] // Optional
- * }
- */
 router.post('/',
-  authMiddleware,
-  async (req: Request<{}, {}, LLMRequest>, res: Response<ApiResponse<LLMResponse>>, next: NextFunction) => {
-    try {
-      const { message } = req.body;
-      // embeddingFileIds is available in req.body for future use
+    authMiddleware,
+    creditsMiddleware(CREDIT_COSTS.LLM_REQUEST),
+    async (req: Request<{}, {}, LLMRequest>, res: Response<ApiResponse<LLMResponse>>, next: NextFunction) => {
+        try {
+            const { message, systemPrompt, embeddedText } = req.body;
 
-      // Validate message
-      if (!message || typeof message !== 'string') {
-        throw AppError.validationError('Message is required and must be a string', ['message']);
-      }
+            if (!message?.trim()) {
+                throw AppError.validationError('Message is required', ['message']);
+            }
 
-      const cost = CREDIT_COSTS.LLM_REQUEST;
+            const response = await llmAdapter.generateResponse(message, [], {
+                systemPrompt,
+                embeddedText
+            });
 
-      // Apply credits middleware dynamically based on request cost
-      await new Promise<void>((resolve, reject) => {
-        creditsMiddleware(cost)(req, res, (error?: any) => {
-          if (error) reject(error);
-          else resolve();
-        });
-      });
+            await consumeCredits(req);
 
-      // Call LLM adapter
-      // Note: embeddingFileIds can be used to retrieve context from embedded files
-      const response = await llmAdapter.generateResponse(message, []);
-
-      // Consume credits after successful response
-      await consumeCredits(req);
-
-      // Return response
-      res.json({
-        success: true,
-        data: {
-          response: response
+            res.json({
+                success: true,
+                data: { response }
+            });
+        } catch (error) {
+            next(error);
         }
-      });
-    } catch (error) {
-      next(error);
     }
-  }
 );
 
 export default router;

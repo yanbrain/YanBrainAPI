@@ -22,7 +22,7 @@ export const CREDIT_COSTS = {
 // ============================================================================
 
 export const YANBRAIN_SERVER = {
-    BASE_URL: process.env.YANBRAIN_SERVER_URL || 'http://localhost:5001/api',
+    BASE_URL: process.env.YANBRAIN_SERVER_URL,
     ENDPOINTS: {
         // New internal endpoint for APIClient cost-based spending
         CREDITS_CONSUME_COST: '/credits/consume-cost',
