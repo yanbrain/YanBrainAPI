@@ -6,7 +6,14 @@ import * as path from 'path';
 const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:8080';
 const TOKEN_CACHE_FILE = path.join(__dirname, '.token-cache.json');
 const DOCUMENTS_DIR = path.join(__dirname, 'documents');
-const OUTPUT_DIR = path.join(__dirname, '..', '..', 'testing', 'output', 'converted');
+const OUTPUT_DIR = path.join(
+    __dirname,
+    '..',
+    '..',
+    'testing',
+    'output',
+    'convertedDocuments'
+);
 
 // Ensure output directory exists
 if (!fs.existsSync(OUTPUT_DIR)) {
@@ -25,7 +32,10 @@ async function getToken(): Promise<string> {
 
     console.log('🔐 Generating new token...');
     const token = await generateAuthToken();
-    fs.writeFileSync(TOKEN_CACHE_FILE, JSON.stringify({ token, timestamp: Date.now() }, null, 2));
+    fs.writeFileSync(
+        TOKEN_CACHE_FILE,
+        JSON.stringify({ token, timestamp: Date.now() }, null, 2)
+    );
     console.log('✓ Token cached\n');
     return token;
 }
@@ -34,13 +44,12 @@ function loadTestFile(filename: string): { filename: string; contentBase64: stri
     const filePath = path.join(DOCUMENTS_DIR, filename);
 
     if (!fs.existsSync(filePath)) {
-        console.log(`⚠️  ${filename} not found, skipping...`);
         return null;
     }
 
     const buffer = fs.readFileSync(filePath);
     return {
-        filename: filename,
+        filename,
         contentBase64: buffer.toString('base64')
     };
 }
@@ -53,7 +62,7 @@ async function testDocumentConvert(files: any[], token: string) {
             `${API_BASE_URL}/api/documents/convert-and-embed`,
             { files },
             {
-                headers: { 'Authorization': `Bearer ${token}` },
+                headers: { Authorization: `Bearer ${token}` },
                 timeout: 60000
             }
         );
@@ -62,13 +71,11 @@ async function testDocumentConvert(files: any[], token: string) {
         console.log(`   Total Files: ${response.data.data.totalFiles}`);
         console.log(`   Credits Charged: ${response.data.data.totalCreditsCharged}\n`);
 
-        // Save results
         const timestamp = Date.now();
         const outputPath = path.join(OUTPUT_DIR, `converted_${timestamp}.json`);
         fs.writeFileSync(outputPath, JSON.stringify(response.data.data, null, 2));
         console.log(`   💾 Results saved: ${outputPath}\n`);
 
-        // Show preview of each file
         response.data.data.files.forEach((file: any) => {
             console.log(`   📄 ${file.filename}`);
             console.log(`      File ID: ${file.fileId}`);
@@ -89,13 +96,14 @@ async function runTests() {
     console.log('🧪 Document Convert & Embed Tests\n');
     console.log('📁 Loading test files from:', DOCUMENTS_DIR, '\n');
 
-    const testFiles = ['sample.pdf', 'sample.docx', 'sample.xlsx', 'sample.pptx', 'sample.txt'];
-    const files = testFiles.map(loadTestFile).filter(f => f !== null);
+    const testFiles = fs.readdirSync(DOCUMENTS_DIR);
+    const files = testFiles
+        .map(loadTestFile)
+        .filter((f): f is { filename: string; contentBase64: string } => f !== null);
 
     if (files.length === 0) {
         console.log('❌ No test files found!');
-        console.log('\nCreate test files in:', DOCUMENTS_DIR);
-        console.log('Needed files:', testFiles.join(', '));
+        console.log('\nAdd documents to:', DOCUMENTS_DIR);
         process.exit(1);
     }
 
@@ -105,7 +113,6 @@ async function runTests() {
     const passed = await testDocumentConvert(files, token);
 
     console.log(`\n📊 Result: ${passed ? 'PASSED' : 'FAILED'}\n`);
-
     process.exit(passed ? 0 : 1);
 }
 

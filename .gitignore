@@ -25,5 +25,11 @@ yarn-error.log*
 .vscode/*
 .idea/*
 
-# Token Cache
+# Testing (keep folders, ignore contents)
 .token-cache.json
+
+/src/testing/documents/*
+!/src/testing/documents/.gitkeep
+
+/src/testing/output/*
+!/src/testing/output/.gitkeep
