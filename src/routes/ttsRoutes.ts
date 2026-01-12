@@ -7,9 +7,17 @@ import { TTSRequest, ApiResponse, TTSResponse } from '../types/api.types';
 const router = Router();
 const ttsAdapter = new ElevenLabsAdapter();
 
-router.post('/',
+/**
+ * POST /api/tts
+ */
+router.post(
+    '/',
     authMiddleware,
-    async (req: Request<{}, {}, TTSRequest>, res: Response<ApiResponse<TTSResponse>>, next: NextFunction) => {
+    async (
+        req: Request<{}, {}, TTSRequest>,
+        res: Response<ApiResponse<TTSResponse>>,
+        next: NextFunction
+    ) => {
         try {
             const { text, voiceId } = req.body;
 

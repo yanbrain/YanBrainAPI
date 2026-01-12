@@ -8,10 +8,9 @@ import { errorMiddleware } from './middleware/errorMiddleware';
 
 // Import PRODUCTION routes
 import documentConvertRoutes from './routes/documentConvertRoutes';
+import embeddingRoutes from './routes/embeddingRoutes';
 import yanAvatarRoutes from './routes/yanAvatarRoutes';
 import imageRoutes from './routes/imageRoutes';
-
-// Import TESTING routes (only enabled in development)
 import llmRoutes from './routes/llmRoutes';
 import ttsRoutes from './routes/ttsRoutes';
 
@@ -43,20 +42,17 @@ app.get('/health', (_req: Request, res: Response) => {
 });
 
 // ============================================================================
-// PRODUCTION ROUTES (Documented for users)
+// PRODUCTION ROUTES
 // ============================================================================
-app.use('/api/documents/convert-and-embed', documentConvertRoutes);
+app.use('/api/documents/convert', documentConvertRoutes);
+app.use('/api/embeddings', embeddingRoutes);
+
 app.use('/api/yanavatar', yanAvatarRoutes);
 app.use('/api/image', imageRoutes);
 
-// ============================================================================
-// TESTING ROUTES (Internal use only - not documented for users)
-// Only enabled in development environment
-// ============================================================================
-if (process.env.NODE_ENV !== 'production') {
-    app.use('/api/llm', llmRoutes);
-    app.use('/api/tts', ttsRoutes);
-}
+// Keep LLM + TTS as production routes (callable externally)
+app.use('/api/llm', llmRoutes);
+app.use('/api/tts', ttsRoutes);
 
 // 404 handler
 app.use((_req: Request, res: Response) => {
@@ -79,16 +75,13 @@ app.listen(PORT, () => {
     console.log(`📍 Health check: http://localhost:${PORT}/health`);
     console.log(`🔧 Environment: ${process.env.NODE_ENV || 'development'}`);
 
-    console.log(`\n✅ Production Endpoints:`);
-    console.log(`   POST /api/documents/convert-and-embed - Convert docs & generate embeddings`);
+    console.log(`\n✅ Endpoints:`);
+    console.log(`   POST /api/documents/convert - Convert documents to text`);
+    console.log(`   POST /api/embeddings - Generate embeddings from text`);
     console.log(`   POST /api/yanavatar - Query with voice response`);
     console.log(`   POST /api/image - Generate images`);
-
-    if (process.env.NODE_ENV !== 'production') {
-        console.log(`\n🧪 Testing Endpoints (dev only):`);
-        console.log(`   POST /api/llm - Test LLM directly`);
-        console.log(`   POST /api/tts - Test TTS directly`);
-    }
+    console.log(`   POST /api/llm - Stateless LLM call`);
+    console.log(`   POST /api/tts - Text-to-speech`);
 });
 
 // Graceful shutdown

@@ -18,26 +18,56 @@ export interface FileUpload {
 }
 
 // ============================================================================
-// Document Convert & Embed Types
+// Document Convert Types (convert-only)
 // ============================================================================
 
 export interface DocumentConvertRequest {
     files: FileUpload[];
 }
 
-export interface ConvertedDocument {
+export interface ConvertedDocumentText {
     fileId: string;
     filename: string;
     text: string;
+    characterCount: number;
+}
+
+export interface DocumentConvertResponse {
+    files: ConvertedDocumentText[];
+    totalFiles: number;
+    totalCreditsCharged: number;
+}
+
+// ============================================================================
+// Embeddings Types (embed-only)
+// ============================================================================
+
+export interface EmbeddingItem {
+    id?: string;
+    filename?: string;
+    text: string;
+}
+
+export interface EmbeddingRequest {
+    items: EmbeddingItem[];
+}
+
+export interface EmbeddedItem {
+    id?: string;
+    filename?: string;
     embedding: number[];
     dimensions: number;
     characterCount: number;
 }
 
-export interface DocumentConvertResponse {
-    files: ConvertedDocument[];
-    totalFiles: number;
+export interface EmbeddingResponse {
+    items: EmbeddedItem[];
+    totalItems: number;
     totalCreditsCharged: number;
+    provider: {
+        provider: string;
+        defaultModel: string;
+    };
 }
 
 // ============================================================================
