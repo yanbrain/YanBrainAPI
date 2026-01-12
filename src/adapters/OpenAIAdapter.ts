@@ -6,58 +6,60 @@ import { ChatMessage, ModelInfo } from '../types/api.types';
 
 export class OpenAIAdapter implements ILLMProvider {
     private client: OpenAI;
-    private model: string = 'gpt-4o-mini'; // Correct model name
-    private readonly MAX_TOKENS = 4000; // Response limit
+    private model: string = 'gpt-4o-mini';
+    private readonly MAX_TOKENS = 1000;
     private readonly DEFAULT_SYSTEM_PROMPT = 'You are a helpful AI assistant for YanBrain applications.';
 
     constructor() {
         this.client = new OpenAI({
             apiKey: API_KEYS.OPENAI,
-            timeout: 60000, // 60s for complex queries
+            timeout: 60000,
             maxRetries: 2
         });
     }
 
-    /**
-     * Generate response with optional RAG context
-     */
     async generateResponse(
-        message: string,
+        userPrompt: string,
         conversationHistory: ChatMessage[] = [],
         options?: {
             systemPrompt?: string;
             embeddedText?: string;
+            maxResponseChars?: number;
         }
     ): Promise<string> {
         try {
-            // Validate message
-            if (!message || typeof message !== 'string' || message.trim().length === 0) {
-                throw AppError.validationError('Message cannot be empty', ['message']);
+            if (!userPrompt || typeof userPrompt !== 'string' || userPrompt.trim().length === 0) {
+                throw AppError.validationError('User prompt cannot be empty', ['userPrompt']);
             }
 
             const systemPrompt = options?.systemPrompt || this.DEFAULT_SYSTEM_PROMPT;
             const embeddedText = options?.embeddedText?.trim();
+            const maxResponseChars = options?.maxResponseChars;
 
-            // Build context-aware user message
-            let userMessage = message;
-            if (embeddedText && embeddedText.length > 0) {
-                userMessage = this.buildRAGPrompt(message, embeddedText);
+            let finalSystemPrompt = systemPrompt;
+            if (maxResponseChars) {
+                finalSystemPrompt += `\n\nIMPORTANT: Keep your response under ${maxResponseChars} characters. Provide complete, well-formed answers without cutting off mid-sentence.`;
+            }
+
+            const finalPrompt = embeddedText
+                ? this.buildRAGPrompt(userPrompt, embeddedText)
+                : userPrompt;
+
+            if (embeddedText) {
                 console.log(`[OpenAI] RAG mode: ${embeddedText.length} chars context`);
             }
 
-            // Build messages array
             const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
-                { role: 'system', content: systemPrompt },
+                { role: 'system', content: finalSystemPrompt },
                 ...conversationHistory.map(msg => ({
                     role: msg.role as 'system' | 'user' | 'assistant',
                     content: msg.content
                 })),
-                { role: 'user', content: userMessage }
+                { role: 'user', content: finalPrompt }
             ];
 
-            // Estimate tokens (rough: 4 chars = 1 token)
             const estimatedTokens = JSON.stringify(messages).length / 4;
-            if (estimatedTokens > 120000) { // gpt-4o-mini 128k context
+            if (estimatedTokens > 120000) {
                 throw AppError.validationError(
                     `Context too large: ~${Math.round(estimatedTokens)} tokens (max ~120k)`,
                     ['conversationHistory', 'embeddedText']
@@ -90,10 +92,7 @@ export class OpenAIAdapter implements ILLMProvider {
                 hasEmbeddedText: !!options?.embeddedText
             });
 
-            // Handle known errors
-            if (error instanceof AppError) {
-                throw error;
-            }
+            if (error instanceof AppError) throw error;
 
             if (error.code === 'insufficient_quota') {
                 throw AppError.quotaExceededError('openai', 'OpenAI account has no credits left');
@@ -118,23 +117,19 @@ export class OpenAIAdapter implements ILLMProvider {
                 throw AppError.providerError('openai', 'OpenAI request timed out', error);
             }
 
-            // Generic error
             throw AppError.providerError('openai', error.message || 'OpenAI request failed', error);
         }
     }
 
-    /**
-     * Build RAG-optimized prompt with embedded context
-     */
-    private buildRAGPrompt(userQuery: string, embeddedText: string): string {
+    private buildRAGPrompt(userPrompt: string, embeddedText: string): string {
         return `Context from documents:
 ---
 ${embeddedText}
 ---
 
-Based on the context above, answer the following question. If the answer is not in the context, say so.
+Based on the context above, answer the following question. If the answer is not in the context, say so clearly.
 
-Question: ${userQuery}`;
+Question: ${userPrompt}`;
     }
 
     getModelInfo(): ModelInfo {

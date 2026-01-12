@@ -11,7 +11,7 @@ Authorization: Bearer <firebase-token>
 
 ---
 
-## Endpoints
+## Production Endpoints
 
 ### Health Check
 ```
@@ -29,16 +29,23 @@ GET /health
 
 ---
 
-### LLM (Chat)
+### Document Convert & Embed
 ```
-POST /api/llm
+POST /api/documents/convert-and-embed
 ```
-**Cost:** 1 credit
+**Cost:** 1 credit per file
+
+**Description:** Converts documents (PDF, DOCX, etc.) to text and generates embeddings. User stores results locally.
 
 **Request:**
 ```json
 {
-  "message": "What is 2+2?"
+  "files": [
+    {
+      "filename": "document.pdf",
+      "contentBase64": "base64-encoded-file"
+    }
+  ]
 }
 ```
 
@@ -47,23 +54,45 @@ POST /api/llm
 {
   "success": true,
   "data": {
-    "response": "2+2 equals 4."
+    "files": [
+      {
+        "fileId": "file_123",
+        "filename": "document.pdf",
+        "text": "Full document text...",
+        "embedding": [0.1, 0.2, ...],
+        "dimensions": 1536,
+        "characterCount": 5420
+      }
+    ],
+    "totalFiles": 1,
+    "totalCreditsCharged": 1
   }
 }
 ```
 
+**Supported Formats:** PDF, DOCX, DOC, RTF, XLSX, XLS, PPTX, PPT, ODT, ODP, ODS, TXT, MD
+
 ---
 
-### Text-to-Speech
+### YanAvatar Query
 ```
-POST /api/tts
+POST /api/yanavatar
 ```
-**Cost:** 2 credits
+**Cost:** 5 credits per request (fixed)
+
+**Description:** AI voice assistant that answers questions based on provided documents. User performs vector search locally and sends only relevant documents.
 
 **Request:**
 ```json
 {
-  "text": "Hello world",
+  "userPrompt": "What products do we have?",
+  "relevantDocuments": [
+    {
+      "filename": "products.md",
+      "text": "Full document text..."
+    }
+  ],
+  "systemPrompt": "Optional custom instructions",
   "voiceId": "optional-voice-id"
 }
 ```
@@ -73,7 +102,9 @@ POST /api/tts
 {
   "success": true,
   "data": {
-    "audio": "base64-encoded-audio"
+    "audio": "base64-encoded-mp3",
+    "textResponse": "Based on the documents...",
+    "documentsUsed": 1
   }
 }
 ```
@@ -106,43 +137,6 @@ POST /api/image
 
 ---
 
-### Embeddings
-```
-POST /api/embeddings
-```
-**Cost:** 5 credits minimum + 1 credit per 1K chars
-
-**Request:**
-```json
-{
-  "files": [
-    {
-      "filename": "document.pdf",
-      "contentBase64": "base64-encoded-file"
-    }
-  ]
-}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "data": {
-    "files": [
-      {
-        "fileId": "file_123",
-        "filename": "document.pdf",
-        "embedding": [0.1, 0.2, ...],
-        "dimensions": 1536
-      }
-    ]
-  }
-}
-```
-
----
-
 ## Error Response
 ```json
 {
@@ -167,15 +161,32 @@ POST /api/embeddings
 
 ## Credit Costs
 
-| Endpoint | Cost                           |
-|----------|--------------------------------|
-| LLM | 1 credit                       |
-| TTS | 2 credits                      |
-| Image | 10 credits                     |
-| Embeddings | 5 credits min + 1 per 1K chars |
+| Endpoint | Cost |
+|----------|------|
+| Document Convert & Embed | 1 credit per file |
+| YanAvatar Query | 5 credits (fixed) |
+| Image Generation | 10 credits |
 
 ---
 
-## Supported File Formats (Embeddings)
+## YanAvatar Workflow
 
-PDF, DOCX, DOC, RTF, XLSX, XLS, PPTX, PPT, ODT, ODP, ODS, TXT, MD
+**Client Side:**
+1. User uploads 200 documents
+2. Call `/api/documents/convert-and-embed` (costs 200 credits)
+3. Store all texts + embeddings locally
+4. When user asks question:
+    - Convert question to embedding locally
+    - Search local embeddings for top 5 relevant docs
+    - Send only those 5 docs to `/api/yanavatar`
+
+**Server Side:**
+1. Receives question + 5 relevant documents
+2. LLM generates answer using document context
+3. TTS converts answer to audio
+4. Returns audio MP3 (costs 5 credits)
+
+**Benefits:**
+- Low server costs (only process relevant docs)
+- Fast responses (small request size)
+- User privacy (documents stored locally)

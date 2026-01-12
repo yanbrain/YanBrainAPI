@@ -6,6 +6,12 @@ import * as path from 'path';
 const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:8080';
 const TOKEN_CACHE_FILE = path.join(__dirname, '.token-cache.json');
 const DOCUMENTS_DIR = path.join(__dirname, 'documents');
+const OUTPUT_DIR = path.join(__dirname, '..', '..', 'testing', 'output', 'converted');
+
+// Ensure output directory exists
+if (!fs.existsSync(OUTPUT_DIR)) {
+    fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+}
 
 async function getToken(): Promise<string> {
     if (fs.existsSync(TOKEN_CACHE_FILE)) {
@@ -39,44 +45,38 @@ function loadTestFile(filename: string): { filename: string; contentBase64: stri
     };
 }
 
-async function testPriceCheck(files: any[], token: string) {
+async function testDocumentConvert(files: any[], token: string) {
     try {
-        const response = await axios.post(
-            `${API_BASE_URL}/api/convert/price-check`,
-            { files },
-            { headers: { 'Authorization': `Bearer ${token}` } }
-        );
+        console.log(`📄 Converting ${files.length} documents...`);
 
-        console.log('✅ Price Check - PASSED');
-        console.log(`   Estimated Cost: ${response.data.data.estimatedCost} credits`);
-        console.log(`   Total Size: ${response.data.data.totalSizeKB} KB`);
-        console.log(`   File Count: ${response.data.data.fileCount}\n`);
-        return true;
-    } catch (error: any) {
-        console.log('❌ Price Check - FAILED');
-        console.error('   Error:', error.response?.data || error.message);
-        return false;
-    }
-}
-
-async function testConversion(files: any[], token: string) {
-    try {
         const response = await axios.post(
-            `${API_BASE_URL}/api/convert`,
+            `${API_BASE_URL}/api/documents/convert-and-embed`,
             { files },
             {
                 headers: { 'Authorization': `Bearer ${token}` },
-                timeout: 30000
+                timeout: 60000
             }
         );
 
-        console.log('✅ Document Conversion - PASSED');
+        console.log('✅ Document Conversion - PASSED\n');
+        console.log(`   Total Files: ${response.data.data.totalFiles}`);
+        console.log(`   Credits Charged: ${response.data.data.totalCreditsCharged}\n`);
+
+        // Save results
+        const timestamp = Date.now();
+        const outputPath = path.join(OUTPUT_DIR, `converted_${timestamp}.json`);
+        fs.writeFileSync(outputPath, JSON.stringify(response.data.data, null, 2));
+        console.log(`   💾 Results saved: ${outputPath}\n`);
+
+        // Show preview of each file
         response.data.data.files.forEach((file: any) => {
             console.log(`   📄 ${file.filename}`);
+            console.log(`      File ID: ${file.fileId}`);
             console.log(`      Characters: ${file.characterCount}`);
-            console.log(`      Preview: ${file.text.substring(0, 100)}...`);
+            console.log(`      Embedding: ${file.dimensions}D vector`);
+            console.log(`      Text preview: ${file.text.substring(0, 100)}...\n`);
         });
-        console.log();
+
         return true;
     } catch (error: any) {
         console.log('❌ Document Conversion - FAILED');
@@ -86,7 +86,7 @@ async function testConversion(files: any[], token: string) {
 }
 
 async function runTests() {
-    console.log('🧪 Document Converter Tests\n');
+    console.log('🧪 Document Convert & Embed Tests\n');
     console.log('📁 Loading test files from:', DOCUMENTS_DIR, '\n');
 
     const testFiles = ['sample.pdf', 'sample.docx', 'sample.xlsx', 'sample.pptx', 'sample.txt'];
@@ -102,18 +102,11 @@ async function runTests() {
     console.log(`✓ Loaded ${files.length} test files\n`);
 
     const token = await getToken();
-    const results = [];
+    const passed = await testDocumentConvert(files, token);
 
-    // Test price check
-    results.push(await testPriceCheck(files, token));
+    console.log(`\n📊 Result: ${passed ? 'PASSED' : 'FAILED'}\n`);
 
-    // Test conversion
-    results.push(await testConversion(files, token));
-
-    const passed = results.filter(r => r).length;
-    console.log(`\n📊 Results: ${passed}/${results.length} tests passed\n`);
-
-    process.exit(passed === results.length ? 0 : 1);
+    process.exit(passed ? 0 : 1);
 }
 
 runTests().catch(error => {

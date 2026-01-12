@@ -5,8 +5,7 @@ import * as path from 'path';
 
 const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:8080';
 const TOKEN_CACHE_FILE = path.join(__dirname, '.token-cache.json');
-const DOCUMENTS_DIR = path.join(__dirname, 'documents');
-const OUTPUT_DIR = path.join(__dirname, 'output');
+const OUTPUT_DIR = path.join(__dirname, '..', '..', 'testing', 'output', 'yanavatar');
 
 // Ensure output directory exists
 if (!fs.existsSync(OUTPUT_DIR)) {
@@ -25,116 +24,71 @@ async function getToken(): Promise<string> {
     return token;
 }
 
-function loadDocuments(): Array<{ filename: string; contentBase64: string }> {
-    const files = fs.readdirSync(DOCUMENTS_DIR);
-    return files.map(filename => ({
-        filename,
-        contentBase64: fs.readFileSync(path.join(DOCUMENTS_DIR, filename)).toString('base64')
-    }));
-}
-
-async function generateEmbeddings(files: any[], token: string) {
-    console.log('\n📄 Converting documents and generating embeddings...');
-
-    const response = await axios.post(
-        `${API_BASE_URL}/api/embeddings`,
-        { files },
-        { headers: { Authorization: `Bearer ${token}` }, timeout: 60000 }
-    );
-
-    const results = response.data.data.files;
-    results.forEach((file: any) => {
-        console.log(`   ✓ ${file.filename} - ${file.dimensions}D embedding`);
-    });
-
-    return results;
-}
-
-async function queryLLM(files: any[], question: string, token: string) {
-    console.log('\n💬 Asking LLM with document context...');
-    console.log(`   Question: "${question}"\n`);
-
-    // Build context from documents
-    const context = files.map((file: any, i: number) => {
-        const text = Buffer.from(file.contentBase64, 'base64').toString('utf-8');
-        return `Document ${i + 1} (${file.filename}):\n${text}`;
-    }).join('\n\n---\n\n');
-
-    const prompt = `Based on these documents, answer the question.
-
-${context}
-
-Question: ${question}
-
-Answer:`;
-
-    const response = await axios.post(
-        `${API_BASE_URL}/api/llm`,
-        { message: prompt },
-        { headers: { Authorization: `Bearer ${token}` }, timeout: 30000 }
-    );
-
-    const answer = response.data.data.response;
-    console.log('   Answer:');
-    console.log('   ─────────────────────────────────────');
-    console.log(`   ${answer}`);
-    console.log('   ─────────────────────────────────────');
-
-    return answer;
-}
-
-async function convertToSpeech(text: string, token: string) {
-    console.log('\n🔊 Converting to speech...');
-
-    const response = await axios.post(
-        `${API_BASE_URL}/api/tts`,
-        { text },
-        { headers: { Authorization: `Bearer ${token}` }, timeout: 60000 }
-    );
-
-    const audioBuffer = Buffer.from(response.data.data.audio, 'base64');
-    const audioPath = path.join(OUTPUT_DIR, 'response.mp3');
-    fs.writeFileSync(audioPath, audioBuffer);
-
-    console.log(`   ✓ Audio saved: ${audioPath} (${Math.round(audioBuffer.length / 1024)} KB)`);
-
-    return audioPath;
-}
-
-async function main() {
+async function testYanAvatar() {
     console.log('\n🤖 YanAvatar End-to-End Test\n');
 
     try {
         const token = await getToken();
 
-        // Step 1: Load documents
-        console.log('📁 Loading documents...');
-        const files = loadDocuments();
-        console.log(`   ✓ Loaded ${files.length} documents`);
+        // Mock relevant documents (normally user would search their local embeddings)
+        const relevantDocuments = [
+            {
+                filename: 'company_info.md',
+                text: 'YanBrain is an AI company founded in 2024. We build AI-powered avatar assistants.'
+            },
+            {
+                filename: 'products.md',
+                text: 'Our main products include: YanAvatar (voice AI assistant), YanDraw (image generation), YanPhotobooth (AI photos).'
+            },
+            {
+                filename: 'team.md',
+                text: 'Our team consists of AI engineers and product designers focused on user experience.'
+            }
+        ];
 
-        // Step 2: Generate embeddings
-        const embeddings = await generateEmbeddings(files, token);
+        const question = "What does YanBrain do and what are the main products?";
 
-        // Step 3: Query LLM
-        const question = "Tell me about our business - what does YanBrain do and who is on the team?";
-        const answer = await queryLLM(files, question, token);
+        console.log(`💬 Question: "${question}"`);
+        console.log(`📄 Using ${relevantDocuments.length} relevant documents\n`);
 
-        // Step 4: Convert to speech
-        const audioPath = await convertToSpeech(answer, token);
+        const response = await axios.post(
+            `${API_BASE_URL}/api/yanavatar`,
+            {
+                userPrompt: question,
+                relevantDocuments: relevantDocuments
+            },
+            {
+                headers: { Authorization: `Bearer ${token}` },
+                timeout: 60000
+            }
+        );
 
-        // Success
-        console.log('\n✅ Test Complete!\n');
-        console.log(`📊 Summary:`);
-        console.log(`   • Documents: ${files.length}`);
-        console.log(`   • Embeddings: ${embeddings.length}`);
-        console.log(`   • Audio: ${audioPath}`);
-        console.log('');
+        const { audio, textResponse, documentsUsed } = response.data.data;
 
+        console.log('✅ YanAvatar Request - PASSED\n');
+        console.log('📝 Text Response:');
+        console.log('   ─────────────────────────────────────');
+        console.log(`   ${textResponse}`);
+        console.log('   ─────────────────────────────────────\n');
+
+        // Save audio
+        const timestamp = Date.now();
+        const audioPath = path.join(OUTPUT_DIR, `response_${timestamp}.mp3`);
+        const audioBuffer = Buffer.from(audio, 'base64');
+        fs.writeFileSync(audioPath, audioBuffer);
+
+        console.log(`🔊 Audio: ${Math.round(audioBuffer.length / 1024)} KB`);
+        console.log(`   💾 Saved: ${audioPath}`);
+        console.log(`📊 Documents Used: ${documentsUsed}`);
+        console.log(`💰 Credits Charged: 5\n`);
+
+        console.log('✅ Test Complete!\n');
         process.exit(0);
+
     } catch (error: any) {
         console.error('\n❌ Test Failed:', error.response?.data || error.message);
         process.exit(1);
     }
 }
 
-void main();
+testYanAvatar();

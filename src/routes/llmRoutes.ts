@@ -1,40 +1,54 @@
-import { Router, Request, Response, NextFunction } from 'express';
+import { Router, Request, Response } from 'express';
 import { authMiddleware } from '../middleware/authMiddleware';
-import { creditsMiddleware, consumeCredits } from '../middleware/creditsMiddleware';
 import { OpenAIAdapter } from '../adapters/OpenAIAdapter';
 import { AppError } from '../errors/AppError';
-import { LLMRequest, ApiResponse, LLMResponse } from '../types/api.types';
-import { CREDIT_COSTS } from '../config/constants';
 
 const router = Router();
 const llmAdapter = new OpenAIAdapter();
 
-router.post('/',
-    authMiddleware,
-    creditsMiddleware(CREDIT_COSTS.LLM_REQUEST),
-    async (req: Request<{}, {}, LLMRequest>, res: Response<ApiResponse<LLMResponse>>, next: NextFunction) => {
-        try {
-            const { message, systemPrompt, embeddedText } = req.body;
+router.post('/llm', authMiddleware, async (req: Request, res: Response) => {
+    try {
+        const { prompt, conversationHistory, systemPrompt } = req.body;
 
-            if (!message?.trim()) {
-                throw AppError.validationError('Message is required', ['message']);
+        if (!prompt || typeof prompt !== 'string' || prompt.trim().length === 0) {
+            throw AppError.validationError('Prompt is required', ['prompt']);
+        }
+
+        const response = await llmAdapter.generateResponse(
+            prompt,
+            conversationHistory || [],
+            { systemPrompt }
+        );
+
+        res.json({
+            success: true,
+            data: {
+                response,
+                model: llmAdapter.getModelInfo()
             }
+        });
 
-            const response = await llmAdapter.generateResponse(message, [], {
-                systemPrompt,
-                embeddedText
+    } catch (error) {
+        if (error instanceof AppError) {
+            res.status(error.statusCode).json({
+                success: false,
+                error: {
+                    code: error.code,
+                    message: error.message,
+                    details: error.details
+                }
             });
-
-            await consumeCredits(req);
-
-            res.json({
-                success: true,
-                data: { response }
+        } else {
+            console.error('[LLM Routes] Unexpected error:', error);
+            res.status(500).json({
+                success: false,
+                error: {
+                    code: 'INTERNAL_ERROR',
+                    message: 'An unexpected error occurred'
+                }
             });
-        } catch (error) {
-            next(error);
         }
     }
-);
+});
 
 export default router;

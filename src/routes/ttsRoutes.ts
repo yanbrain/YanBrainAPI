@@ -1,17 +1,14 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { authMiddleware } from '../middleware/authMiddleware';
-import { creditsMiddleware, consumeCredits } from '../middleware/creditsMiddleware';
 import { ElevenLabsAdapter } from '../adapters/ElevenLabsAdapter';
 import { AppError } from '../errors/AppError';
 import { TTSRequest, ApiResponse, TTSResponse } from '../types/api.types';
-import { CREDIT_COSTS } from '../config/constants';
 
 const router = Router();
 const ttsAdapter = new ElevenLabsAdapter();
 
 router.post('/',
     authMiddleware,
-    creditsMiddleware(CREDIT_COSTS.TTS_REQUEST),
     async (req: Request<{}, {}, TTSRequest>, res: Response<ApiResponse<TTSResponse>>, next: NextFunction) => {
         try {
             const { text, voiceId } = req.body;
@@ -21,8 +18,6 @@ router.post('/',
             }
 
             const audioBuffer = await ttsAdapter.textToSpeech(text, voiceId);
-
-            await consumeCredits(req);
 
             res.json({
                 success: true,

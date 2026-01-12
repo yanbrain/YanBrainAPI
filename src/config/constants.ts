@@ -7,14 +7,10 @@ dotenv.config();
 // ============================================================================
 
 export const CREDIT_COSTS = {
-    LLM_REQUEST: 1,
-    IMAGE_GENERATION: 10,
-    TTS_REQUEST: 2,
-    EMBEDDING_MIN: 5,
-    EMBEDDING_CREDITS_PER_1K_CHARS: 1,
-    // Document Converter costs
-    DOCUMENT_CONVERTER_MIN: 1,
-    DOCUMENT_CONVERTER_CREDITS_PER_1K_CHARS: 1
+    // Production endpoints
+    DOCUMENT_CONVERT_AND_EMBED_PER_FILE: 1, // Cost per file for conversion + embedding
+    YANAVATAR_REQUEST: 5, // Fixed cost per YanAvatar request (includes LLM + TTS)
+    IMAGE_GENERATION: 10 // For other app
 } as const;
 
 // ============================================================================
@@ -24,12 +20,8 @@ export const CREDIT_COSTS = {
 export const YANBRAIN_SERVER = {
     BASE_URL: process.env.YANBRAIN_SERVER_URL,
     ENDPOINTS: {
-        // New internal endpoint for APIClient cost-based spending
-        CREDITS_CONSUME_COST: '/credits/consume-cost',
-
-        // (Optional legacy endpoints - keep if you still use them elsewhere)
-        CREDITS_BALANCE: '/credits/balance',
-        CREDITS_CONSUME: '/credits/consume'
+        // Internal endpoint for APIClient cost-based spending
+        CREDITS_CONSUME_COST: '/credits/consume-cost'
     }
 } as const;
 
@@ -78,7 +70,6 @@ export function validateConfig(): void {
     const required = [
         'YANBRAIN_SERVER_URL',
         'FIREBASE_PROJECT_ID',
-        // Required for secure consume-cost calls
         'YANBRAIN_INTERNAL_SECRET'
     ];
 

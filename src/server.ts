@@ -6,11 +6,14 @@ import * as admin from 'firebase-admin';
 // Import middleware
 import { errorMiddleware } from './middleware/errorMiddleware';
 
-// Import routes
+// Import PRODUCTION routes
+import documentConvertRoutes from './routes/documentConvertRoutes';
+import yanAvatarRoutes from './routes/yanAvatarRoutes';
+import imageRoutes from './routes/imageRoutes';
+
+// Import TESTING routes (only enabled in development)
 import llmRoutes from './routes/llmRoutes';
 import ttsRoutes from './routes/ttsRoutes';
-import imageRoutes from './routes/imageRoutes';
-import embeddingRoutes from './routes/embeddingRoutes';
 
 // Load environment variables
 dotenv.config();
@@ -39,11 +42,21 @@ app.get('/health', (_req: Request, res: Response) => {
     });
 });
 
-// API Routes
-app.use('/api/llm', llmRoutes);
-app.use('/api/tts', ttsRoutes);
+// ============================================================================
+// PRODUCTION ROUTES (Documented for users)
+// ============================================================================
+app.use('/api/documents/convert-and-embed', documentConvertRoutes);
+app.use('/api/yanavatar', yanAvatarRoutes);
 app.use('/api/image', imageRoutes);
-app.use('/api/embeddings', embeddingRoutes);
+
+// ============================================================================
+// TESTING ROUTES (Internal use only - not documented for users)
+// Only enabled in development environment
+// ============================================================================
+if (process.env.NODE_ENV !== 'production') {
+    app.use('/api/llm', llmRoutes);
+    app.use('/api/tts', ttsRoutes);
+}
 
 // 404 handler
 app.use((_req: Request, res: Response) => {
@@ -65,11 +78,17 @@ app.listen(PORT, () => {
     console.log(`🚀 YanBrain API Client running on port ${PORT}`);
     console.log(`📍 Health check: http://localhost:${PORT}/health`);
     console.log(`🔧 Environment: ${process.env.NODE_ENV || 'development'}`);
-    console.log(`\n✅ Available Endpoints:`);
-    console.log(`   POST /api/llm - Generate text from LLM`);
-    console.log(`   POST /api/tts - Text to speech`);
+
+    console.log(`\n✅ Production Endpoints:`);
+    console.log(`   POST /api/documents/convert-and-embed - Convert docs & generate embeddings`);
+    console.log(`   POST /api/yanavatar - Query with voice response`);
     console.log(`   POST /api/image - Generate images`);
-    console.log(`   POST /api/embeddings - Convert documents & generate embeddings`);
+
+    if (process.env.NODE_ENV !== 'production') {
+        console.log(`\n🧪 Testing Endpoints (dev only):`);
+        console.log(`   POST /api/llm - Test LLM directly`);
+        console.log(`   POST /api/tts - Test TTS directly`);
+    }
 });
 
 // Graceful shutdown

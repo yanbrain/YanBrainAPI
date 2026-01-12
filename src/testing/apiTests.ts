@@ -7,6 +7,19 @@ const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:8080';
 const TOKEN_CACHE_FILE = path.join(__dirname, '.token-cache.json');
 const TOKEN_VALIDITY_MINUTES = 55;
 
+// Output directories
+const OUTPUT_DIRS = {
+    images: path.join(__dirname, '..', '..', 'testing', 'output', 'images'),
+    audio: path.join(__dirname, '..', '..', 'testing', 'output', 'audio')
+};
+
+// Ensure output directories exist
+Object.values(OUTPUT_DIRS).forEach(dir => {
+    if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+    }
+});
+
 interface TokenCache {
     token: string;
     timestamp: number;
@@ -41,12 +54,6 @@ const TEST_DATA = {
     image: {
         prompt: 'A beautiful sunset',
         imageBase64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
-    },
-    embeddings: {
-        files: [{
-            filename: 'test.txt',
-            contentBase64: Buffer.from('Hello world! This is a test file.').toString('base64')
-        }]
     }
 };
 
@@ -65,6 +72,14 @@ async function testEndpoint(name: string, endpoint: string, data: any, token: st
         );
 
         console.log(`✅ ${name} - PASSED`);
+
+        // Save outputs based on endpoint
+        if (name === 'Image' && response.data.success) {
+            await saveImage(response.data.data.imageUrl);
+        } else if (name === 'TTS' && response.data.success) {
+            saveAudio(response.data.data.audio);
+        }
+
         if (process.argv[2]) {
             console.log('Response:', JSON.stringify(response.data, null, 2));
         }
@@ -79,6 +94,34 @@ async function testEndpoint(name: string, endpoint: string, data: any, token: st
             code: error.code
         });
         return false;
+    }
+}
+
+async function saveImage(imageUrl: string) {
+    try {
+        const response = await axios.get(imageUrl, { responseType: 'arraybuffer' });
+        const timestamp = Date.now();
+        const filename = `image_${timestamp}.png`;
+        const filepath = path.join(OUTPUT_DIRS.images, filename);
+
+        fs.writeFileSync(filepath, response.data);
+        console.log(`   💾 Saved: ${filepath}`);
+    } catch (error: any) {
+        console.error(`   ⚠️  Failed to save image: ${error.message}`);
+    }
+}
+
+function saveAudio(base64Audio: string) {
+    try {
+        const timestamp = Date.now();
+        const filename = `audio_${timestamp}.mp3`;
+        const filepath = path.join(OUTPUT_DIRS.audio, filename);
+
+        const buffer = Buffer.from(base64Audio, 'base64');
+        fs.writeFileSync(filepath, buffer);
+        console.log(`   💾 Saved: ${filepath}`);
+    } catch (error: any) {
+        console.error(`   ⚠️  Failed to save audio: ${error.message}`);
     }
 }
 
@@ -123,12 +166,8 @@ async function runTests() {
         results.push(await testEndpoint('Image', '/api/image', TEST_DATA.image, token));
     }
 
-    if (!testName || testName === 'embeddings') {
-        results.push(await testEndpoint('Embeddings', '/api/embeddings', TEST_DATA.embeddings, token));
-    }
-
     const passed = results.filter(r => r).length;
-    console.log(`\n${passed}/${results.length} tests passed\n`);
+    console.log(`\n📊 ${passed}/${results.length} tests passed\n`);
 
     process.exit(passed === results.length ? 0 : 1);
 }

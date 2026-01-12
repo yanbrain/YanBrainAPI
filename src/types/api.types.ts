@@ -23,8 +23,49 @@ export interface FileUpload {
     contentBase64: string;
 }
 
-export interface EmbeddingRequest {
+// ============================================================================
+// Document Convert & Embed Types
+// ============================================================================
+
+export interface DocumentConvertRequest {
     files: FileUpload[];
+}
+
+export interface ConvertedDocument {
+    fileId: string;
+    filename: string;
+    text: string;
+    embedding: number[];
+    dimensions: number;
+    characterCount: number;
+}
+
+export interface DocumentConvertResponse {
+    files: ConvertedDocument[];
+    totalFiles: number;
+    totalCreditsCharged: number;
+}
+
+// ============================================================================
+// YanAvatar Types
+// ============================================================================
+
+export interface RelevantDocument {
+    filename: string;
+    text: string;
+}
+
+export interface YanAvatarRequest {
+    userPrompt: string;
+    relevantDocuments: RelevantDocument[];
+    systemPrompt?: string;
+    voiceId?: string;
+}
+
+export interface YanAvatarResponse {
+    audio: string; // base64 encoded MP3
+    textResponse: string; // LLM's text answer (for debugging/logging)
+    documentsUsed: number;
 }
 
 // ============================================================================
@@ -54,17 +95,6 @@ export interface TTSResponse {
 
 export interface ImageResponse {
     imageUrl: string;
-}
-
-export interface EmbeddingFile {
-    fileId: string;
-    filename: string;
-    embedding: number[];
-    dimensions: number;
-}
-
-export interface EmbeddingResponse {
-    files: EmbeddingFile[];
 }
 
 // ============================================================================
