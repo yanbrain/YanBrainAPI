@@ -8,6 +8,7 @@ export class ElevenLabsAdapter implements ITTSProvider {
     private readonly client: ElevenLabsClient;
     private readonly model = 'eleven_flash_v2_5';
     private readonly defaultVoiceId = 'EXAVITQu4vr4xnSDxMaL';
+    private readonly MAX_TEXT_LENGTH = 400;
 
     constructor() {
         this.client = new ElevenLabsClient({
@@ -21,9 +22,9 @@ export class ElevenLabsAdapter implements ITTSProvider {
             throw AppError.validationError('Text cannot be empty', ['text']);
         }
 
-        if (trimmedText.length > 5000) {
+        if (trimmedText.length > this.MAX_TEXT_LENGTH) {
             throw AppError.validationError(
-                `Text too long: ${trimmedText.length} chars (max 5000)`,
+                `Text too long: ${trimmedText.length} chars (max ${this.MAX_TEXT_LENGTH})`,
                 ['text']
             );
         }
@@ -104,5 +105,3 @@ export class ElevenLabsAdapter implements ITTSProvider {
         };
     }
 }
-
-export default ElevenLabsAdapter;
