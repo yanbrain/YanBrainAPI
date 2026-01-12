@@ -25,6 +25,10 @@ yarn-error.log*
 .vscode/*
 .idea/*
 
+# Ignore all Unity meta files
+*.meta
+
+
 # Testing (keep folders, ignore contents)
 .token-cache.json
 

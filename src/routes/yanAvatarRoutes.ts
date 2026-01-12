@@ -14,33 +14,41 @@ const ttsAdapter = new ElevenLabsAdapter();
 /**
  * POST /api/yanavatar
  *
- * Main YanAvatar endpoint:
- * - Receives user prompt + relevant documents (user did vector search locally)
- * - LLM generates answer using document context
- * - TTS converts answer to audio
- * - Returns audio MP3
- *
- * Cost: 5 credits per request (fixed)
+ * Stateless YanAvatar endpoint
+ * Cost: 5 credits per request
  */
-router.post('/',
+router.post(
+    '/',
     authMiddleware,
     creditsMiddleware(CREDIT_COSTS.YANAVATAR_REQUEST),
-    async (req: Request<{}, {}, YanAvatarRequest>, res: Response<ApiResponse<YanAvatarResponse>>, next: NextFunction) => {
+    async (
+        req: Request<{}, {}, YanAvatarRequest>,
+        res: Response<ApiResponse<YanAvatarResponse>>,
+        next: NextFunction
+    ) => {
         try {
             const { userPrompt, relevantDocuments, systemPrompt, voiceId } = req.body;
 
             // Validation
-            if (!userPrompt || typeof userPrompt !== 'string' || userPrompt.trim().length === 0) {
-                throw AppError.validationError('userPrompt is required and must be a non-empty string', ['userPrompt']);
+            if (typeof userPrompt !== 'string' || userPrompt.trim().length === 0) {
+                throw AppError.validationError(
+                    'userPrompt is required and must be a non-empty string',
+                    ['userPrompt']
+                );
             }
 
-            if (!relevantDocuments || !Array.isArray(relevantDocuments) || relevantDocuments.length === 0) {
-                throw AppError.validationError('relevantDocuments must be a non-empty array', ['relevantDocuments']);
+            if (!Array.isArray(relevantDocuments) || relevantDocuments.length === 0) {
+                throw AppError.validationError(
+                    'relevantDocuments must be a non-empty array',
+                    ['relevantDocuments']
+                );
             }
 
-            // Validate each document
             for (let i = 0; i < relevantDocuments.length; i++) {
-                if (!relevantDocuments[i].filename || !relevantDocuments[i].text) {
+                if (
+                    typeof relevantDocuments[i].filename !== 'string' ||
+                    typeof relevantDocuments[i].text !== 'string'
+                ) {
                     throw AppError.validationError(
                         `relevantDocuments[${i}] missing filename or text`,
                         [`relevantDocuments[${i}]`]
@@ -48,41 +56,35 @@ router.post('/',
                 }
             }
 
-            console.log(`[YanAvatar] User ${req.user?.uid}: "${userPrompt.substring(0, 50)}..."`);
-            console.log(`[YanAvatar] Documents: ${relevantDocuments.length}`);
+            console.log(
+                `[YanAvatar] User ${req.user?.uid}: "${userPrompt.substring(0, 50)}..."`
+            );
 
-            // Step 1: Build context from relevant documents
-            const documentContext = relevantDocuments.map((doc, index) => {
-                return `Document ${index + 1}: ${doc.filename}\n${doc.text}`;
-            }).join('\n\n---\n\n');
+            // Build document context
+            const documentContext = relevantDocuments
+                .map((doc, index) =>
+                    `Document ${index + 1}: ${doc.filename}\n${doc.text}`
+                )
+                .join('\n\n---\n\n');
 
-            console.log(`[YanAvatar] Context size: ${documentContext.length} characters`);
+            const defaultSystemPrompt =
+                'You are YanAvatar, an AI assistant that answers questions based on provided documents. Always cite which document you used when answering.';
 
-            // Step 2: Generate LLM response with document context
-            const defaultSystemPrompt = 'You are YanAvatar, an AI assistant that answers questions based on provided documents. Always cite which document you used when answering.';
-
+            // ✅ Stateless LLM call (NO history)
             const llmResponse = await llmAdapter.generateResponse(
                 userPrompt,
-                [], // No conversation history
                 {
                     systemPrompt: systemPrompt || defaultSystemPrompt,
                     embeddedText: documentContext
                 }
             );
 
-            console.log(`[YanAvatar] LLM response: ${llmResponse.length} characters`);
-
-            // Step 3: Convert to speech
+            // Convert to speech
             const audioBuffer = await ttsAdapter.textToSpeech(llmResponse, voiceId);
 
-            console.log(`[YanAvatar] Audio generated: ${Math.round(audioBuffer.length / 1024)} KB`);
-
-            // Step 4: Consume credits after successful completion
+            // Consume credits
             await consumeCredits(req);
 
-            console.log(`[YanAvatar] Success: ${CREDIT_COSTS.YANAVATAR_REQUEST} credits charged`);
-
-            // Return response
             res.json({
                 success: true,
                 data: {
@@ -91,7 +93,6 @@ router.post('/',
                     documentsUsed: relevantDocuments.length
                 }
             });
-
         } catch (error) {
             next(error);
         }

@@ -2,12 +2,6 @@
 // API Request Types
 // ============================================================================
 
-export interface LLMRequest {
-    message: string;
-    systemPrompt?: string;
-    embeddedText?: string;
-}
-
 export interface TTSRequest {
     text: string;
     voiceId?: string;
@@ -15,7 +9,7 @@ export interface TTSRequest {
 
 export interface ImageRequest {
     prompt: string;
-    imageBase64: string;
+    imageBase64?: string;
 }
 
 export interface FileUpload {
@@ -63,8 +57,8 @@ export interface YanAvatarRequest {
 }
 
 export interface YanAvatarResponse {
-    audio: string; // base64 encoded MP3
-    textResponse: string; // LLM's text answer (for debugging/logging)
+    audio: string;          // base64 encoded MP3
+    textResponse: string;   // LLM response text
     documentsUsed: number;
 }
 
@@ -85,10 +79,6 @@ export interface ApiError {
     details?: Record<string, any>;
 }
 
-export interface LLMResponse {
-    response: string;
-}
-
 export interface TTSResponse {
     audio: string; // base64 encoded
 }
@@ -98,13 +88,8 @@ export interface ImageResponse {
 }
 
 // ============================================================================
-// Common Types
+// Provider / Model Types
 // ============================================================================
-
-export interface ChatMessage {
-    role: 'system' | 'user' | 'assistant';
-    content: string;
-}
 
 export interface ModelInfo {
     provider: string;

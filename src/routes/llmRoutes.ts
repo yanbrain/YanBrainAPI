@@ -6,40 +6,67 @@ import { AppError } from '../errors/AppError';
 const router = Router();
 const llmAdapter = new OpenAIAdapter();
 
-router.post('/llm', authMiddleware, async (req: Request, res: Response) => {
-    try {
-        const { prompt, conversationHistory, systemPrompt } = req.body;
+// ✅ Explicit request body type
+interface LLMRequestBody {
+    prompt: string;
+    systemPrompt?: string;
+}
 
-        if (!prompt || typeof prompt !== 'string' || prompt.trim().length === 0) {
-            throw AppError.validationError('Prompt is required', ['prompt']);
-        }
+/**
+ * POST /api/llm
+ * Stateless LLM endpoint (no memory)
+ */
+router.post(
+    '/llm',
+    authMiddleware,
+    async (
+        req: Request<{}, {}, LLMRequestBody>,
+        res: Response
+    ) => {
+        try {
+            const { prompt, systemPrompt } = req.body;
 
-        const response = await llmAdapter.generateResponse(
-            prompt,
-            conversationHistory || [],
-            { systemPrompt }
-        );
-
-        res.json({
-            success: true,
-            data: {
-                response,
-                model: llmAdapter.getModelInfo()
+            // ✅ Now TypeScript KNOWS prompt is string
+            if (prompt.trim().length === 0) {
+                throw AppError.validationError('Prompt is required', ['prompt']);
             }
-        });
 
-    } catch (error) {
-        if (error instanceof AppError) {
-            res.status(error.statusCode).json({
-                success: false,
-                error: {
-                    code: error.code,
-                    message: error.message,
-                    details: error.details
+            if (
+                systemPrompt !== undefined &&
+                systemPrompt.trim().length === 0
+            ) {
+                throw AppError.validationError(
+                    'systemPrompt cannot be empty',
+                    ['systemPrompt']
+                );
+            }
+
+            const response = await llmAdapter.generateResponse(prompt, {
+                systemPrompt
+            });
+
+            res.json({
+                success: true,
+                data: {
+                    response,
+                    model: llmAdapter.getModelInfo()
                 }
             });
-        } else {
-            console.error('[LLM Routes] Unexpected error:', error);
+        } catch (error) {
+            if (error instanceof AppError) {
+                res.status(error.statusCode).json({
+                    success: false,
+                    error: {
+                        code: error.code,
+                        message: error.message,
+                        details: error.details
+                    }
+                });
+                return;
+            }
+
+            console.error('[LLM Route] Unexpected error:', error);
+
             res.status(500).json({
                 success: false,
                 error: {
@@ -49,6 +76,6 @@ router.post('/llm', authMiddleware, async (req: Request, res: Response) => {
             });
         }
     }
-});
+);
 
 export default router;

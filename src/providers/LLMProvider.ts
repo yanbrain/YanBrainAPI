@@ -1,9 +1,13 @@
-import { ChatMessage, ModelInfo } from '../types/api.types';
+import { ModelInfo } from '../types/api.types';
 
 export interface ILLMProvider {
     generateResponse(
         userPrompt: string,
-        conversationHistory?: ChatMessage[]
+        options?: {
+            systemPrompt?: string;
+            embeddedText?: string;
+            maxResponseChars?: number;
+        }
     ): Promise<string>;
 
     getModelInfo(): ModelInfo;

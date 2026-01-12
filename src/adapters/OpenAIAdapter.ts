@@ -2,13 +2,14 @@ import OpenAI from 'openai';
 import { ILLMProvider } from '../providers/LLMProvider';
 import { AppError } from '../errors/AppError';
 import { API_KEYS } from '../config/constants';
-import { ChatMessage, ModelInfo } from '../types/api.types';
+import { ModelInfo } from '../types/api.types';
 
 export class OpenAIAdapter implements ILLMProvider {
     private client: OpenAI;
     private model: string = 'gpt-4o-mini';
     private readonly MAX_TOKENS = 1000;
-    private readonly DEFAULT_SYSTEM_PROMPT = 'You are a helpful AI assistant for YanBrain applications.';
+    private readonly DEFAULT_SYSTEM_PROMPT =
+        'You are a helpful AI assistant for YanBrain applications.';
 
     constructor() {
         this.client = new OpenAI({
@@ -20,7 +21,6 @@ export class OpenAIAdapter implements ILLMProvider {
 
     async generateResponse(
         userPrompt: string,
-        conversationHistory: ChatMessage[] = [],
         options?: {
             systemPrompt?: string;
             embeddedText?: string;
@@ -28,7 +28,7 @@ export class OpenAIAdapter implements ILLMProvider {
         }
     ): Promise<string> {
         try {
-            if (!userPrompt || typeof userPrompt !== 'string' || userPrompt.trim().length === 0) {
+            if (!userPrompt || !userPrompt.trim()) {
                 throw AppError.validationError('User prompt cannot be empty', ['userPrompt']);
             }
 
@@ -38,58 +38,40 @@ export class OpenAIAdapter implements ILLMProvider {
 
             let finalSystemPrompt = systemPrompt;
             if (maxResponseChars) {
-                finalSystemPrompt += `\n\nIMPORTANT: Keep your response under ${maxResponseChars} characters. Provide complete, well-formed answers without cutting off mid-sentence.`;
+                finalSystemPrompt +=
+                    `\n\nIMPORTANT: Keep your response under ${maxResponseChars} characters.`;
             }
 
             const finalPrompt = embeddedText
                 ? this.buildRAGPrompt(userPrompt, embeddedText)
                 : userPrompt;
 
-            if (embeddedText) {
-                console.log(`[OpenAI] RAG mode: ${embeddedText.length} chars context`);
-            }
-
             const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
                 { role: 'system', content: finalSystemPrompt },
-                ...conversationHistory.map(msg => ({
-                    role: msg.role as 'system' | 'user' | 'assistant',
-                    content: msg.content
-                })),
                 { role: 'user', content: finalPrompt }
             ];
 
-            const estimatedTokens = JSON.stringify(messages).length / 4;
-            if (estimatedTokens > 120000) {
-                throw AppError.validationError(
-                    `Context too large: ~${Math.round(estimatedTokens)} tokens (max ~120k)`,
-                    ['conversationHistory', 'embeddedText']
-                );
-            }
-
-            console.log(`[OpenAI] Generating response: ~${Math.round(estimatedTokens)} tokens context`);
-
             const response = await this.client.chat.completions.create({
                 model: this.model,
-                messages: messages,
+                messages,
                 max_tokens: this.MAX_TOKENS,
                 temperature: 0.7
             });
 
-            const content = response.choices[0].message.content;
+            const content = response.choices[0]?.message?.content;
 
-            if (!content || content.trim().length === 0) {
+            if (typeof content !== 'string' || content.trim().length === 0) {
                 throw AppError.providerError('openai', 'Empty response from OpenAI');
             }
 
-            console.log(`[OpenAI] Response generated: ${content.length} chars`);
             return content.trim();
 
+
         } catch (error: any) {
-            console.error('[OpenAI] LLM error:', {
+            console.error('[OpenAI] Error:', {
                 message: error.message,
                 code: error.code,
-                status: error.status,
-                hasEmbeddedText: !!options?.embeddedText
+                status: error.status
             });
 
             if (error instanceof AppError) throw error;
@@ -98,26 +80,19 @@ export class OpenAIAdapter implements ILLMProvider {
                 throw AppError.quotaExceededError('openai', 'OpenAI account has no credits left');
             }
 
-            if (error.status === 429 || error.code === 'rate_limit_exceeded') {
-                throw AppError.rateLimitError('openai', 'OpenAI rate limit exceeded');
+            if (error.status === 429) {
+                throw AppError.rateLimitError('openai', 'Rate limit exceeded');
             }
 
-            if (error.status === 401 || error.code === 'invalid_api_key') {
+            if (error.status === 401) {
                 throw AppError.providerError('openai', 'Invalid OpenAI API key', error);
             }
 
-            if (error.code === 'context_length_exceeded') {
-                throw AppError.validationError(
-                    'Context exceeds model token limit',
-                    ['conversationHistory', 'embeddedText']
-                );
-            }
-
-            if (error.code === 'ETIMEDOUT' || error.message?.includes('timeout')) {
-                throw AppError.providerError('openai', 'OpenAI request timed out', error);
-            }
-
-            throw AppError.providerError('openai', error.message || 'OpenAI request failed', error);
+            throw AppError.providerError(
+                'openai',
+                error.message || 'OpenAI request failed',
+                error
+            );
         }
     }
 
@@ -127,7 +102,8 @@ export class OpenAIAdapter implements ILLMProvider {
 ${embeddedText}
 ---
 
-Based on the context above, answer the following question. If the answer is not in the context, say so clearly.
+Based on the context above, answer the following question.
+If the answer is not in the context, say so clearly.
 
 Question: ${userPrompt}`;
     }
