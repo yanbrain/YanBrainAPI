@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { generateToken } from './generateToken';
+import { generateAuthToken } from './generateAuthToken';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -19,7 +19,7 @@ async function getToken(): Promise<string> {
         if (ageMinutes < 55) return cache.token;
     }
 
-    const token = await generateToken();
+    const token = await generateAuthToken();
     fs.writeFileSync(TOKEN_CACHE_FILE, JSON.stringify({ token, timestamp: Date.now() }));
     return token;
 }

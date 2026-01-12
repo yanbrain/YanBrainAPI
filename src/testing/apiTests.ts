@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { generateToken } from './generateToken';
+import { generateAuthToken } from './generateAuthToken';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -41,7 +41,7 @@ async function getToken(): Promise<string> {
     }
 
     console.log('🔐 Generating new token...');
-    const token = await generateToken();
+    const token = await generateAuthToken();
     fs.writeFileSync(TOKEN_CACHE_FILE, JSON.stringify({ token, timestamp: Date.now() }, null, 2));
     console.log('✓ Token cached\n');
 

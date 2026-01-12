@@ -10,7 +10,7 @@
     "watch": "tsc --watch",
     "clean": "rm -rf dist",
     "prebuild": "npm run clean",
-    "token": "tsx src/testing/generateToken.ts",
+    "token": "tsx src/testing/generateAuthToken.ts",
     "test": "tsx src/testing/apiTests.ts",
     "test:health": "tsx src/testing/apiTests.ts health",
     "test:llm": "tsx src/testing/apiTests.ts llm",

@@ -10,7 +10,7 @@ const TEST_USER = {
 
 const FIREBASE_API_KEY = process.env.FIREBASE_API_KEY || '';
 
-async function generateToken(): Promise<string> {
+async function generateAuthToken(): Promise<string> {
     if (!FIREBASE_API_KEY) {
         throw new Error('FIREBASE_API_KEY not found in .env');
     }
@@ -48,7 +48,7 @@ async function generateToken(): Promise<string> {
 
 // Run standalone
 if (require.main === module) {
-    generateToken()
+    generateAuthToken()
         .then((token) => {
             console.log(token);
             process.exit(0);
@@ -59,4 +59,4 @@ if (require.main === module) {
         });
 }
 
-export { generateToken };
+export { generateAuthToken };
