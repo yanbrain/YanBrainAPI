@@ -5,171 +5,218 @@ import * as path from 'path';
 
 const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:8080';
 const TOKEN_CACHE_FILE = path.join(__dirname, '.token-cache.json');
-const TOKEN_VALIDITY_MINUTES = 55;
+const DOCUMENTS_DIR = path.join(__dirname, 'documents');
+const OUTPUT_DIR = path.join(__dirname, 'output', 'api');
 
-// Output directories
-const OUTPUT_DIRS = {
-    images: path.join(__dirname, '..', '..', 'testing', 'output', 'images'),
-    audio: path.join(__dirname, '..', '..', 'testing', 'output', 'audio')
-};
-
-// Ensure output directories exist
-Object.values(OUTPUT_DIRS).forEach(dir => {
-    if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-    }
-});
-
-interface TokenCache {
-    token: string;
-    timestamp: number;
+if (!fs.existsSync(OUTPUT_DIR)) {
+    fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 }
 
 async function getToken(): Promise<string> {
     if (fs.existsSync(TOKEN_CACHE_FILE)) {
-        try {
-            const cache: TokenCache = JSON.parse(fs.readFileSync(TOKEN_CACHE_FILE, 'utf-8'));
-            const ageMinutes = (Date.now() - cache.timestamp) / 1000 / 60;
-
-            if (ageMinutes < TOKEN_VALIDITY_MINUTES) {
-                console.log('✓ Using cached token\n');
-                return cache.token;
-            }
-        } catch (error) {
-            // Invalid cache
+        const cache = JSON.parse(fs.readFileSync(TOKEN_CACHE_FILE, 'utf-8'));
+        const ageMinutes = (Date.now() - cache.timestamp) / 1000 / 60;
+        if (ageMinutes < 55) {
+            console.log('✓ Using cached token\n');
+            return cache.token;
         }
     }
 
     console.log('🔐 Generating new token...');
     const token = await generateAuthToken();
-    fs.writeFileSync(TOKEN_CACHE_FILE, JSON.stringify({ token, timestamp: Date.now() }, null, 2));
+    fs.writeFileSync(
+        TOKEN_CACHE_FILE,
+        JSON.stringify({ token, timestamp: Date.now() }, null, 2)
+    );
     console.log('✓ Token cached\n');
-
     return token;
 }
 
-const TEST_DATA = {
-    llm: { message: 'What is 2+2?' },
-    tts: { text: 'Hello from YanBrain' },
-    image: {
-        prompt: 'A beautiful sunset',
-        imageBase64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+function loadTestFile(filename: string): { filename: string; contentBase64: string } | null {
+    const filePath = path.join(DOCUMENTS_DIR, filename);
+
+    if (!fs.existsSync(filePath)) {
+        return null;
     }
-};
 
-async function testEndpoint(name: string, endpoint: string, data: any, token: string) {
+    const buffer = fs.readFileSync(filePath);
+    return {
+        filename,
+        contentBase64: buffer.toString('base64')
+    };
+}
+
+async function testHealthCheck() {
     try {
-        const response = await axios.post(
-            `${API_BASE_URL}${endpoint}`,
-            data,
-            {
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                timeout: 30000
-            }
-        );
-
-        console.log(`✅ ${name} - PASSED`);
-
-        // Save outputs based on endpoint
-        if (name === 'Image' && response.data.success) {
-            await saveImage(response.data.data.imageUrl);
-        } else if (name === 'TTS' && response.data.success) {
-            saveAudio(response.data.data.audio);
-        }
-
-        if (process.argv[2]) {
-            console.log('Response:', JSON.stringify(response.data, null, 2));
-        }
+        console.log('🏥 Testing Health Check...');
+        const response = await axios.get(`${API_BASE_URL}/health`);
+        console.log('✅ Health Check - PASSED\n');
+        console.log('   Status:', response.data.status);
+        console.log('   Service:', response.data.service);
+        console.log('   Version:', response.data.version, '\n');
         return true;
     } catch (error: any) {
-        console.log(`❌ ${name} - FAILED`);
-        console.error('Error details:', {
-            status: error.response?.status,
-            statusText: error.response?.statusText,
-            data: error.response?.data,
-            message: error.message,
-            code: error.code
-        });
+        console.log('❌ Health Check - FAILED');
+        console.error('   Error:', error.message, '\n');
         return false;
     }
 }
 
-async function saveImage(imageUrl: string) {
+async function testDocumentConvertAndEmbed(files: any[], token: string) {
     try {
-        const response = await axios.get(imageUrl, { responseType: 'arraybuffer' });
+        console.log(`📄 Testing Document Convert & Embed (${files.length} files)...`);
+
+        const response = await axios.post(
+            `${API_BASE_URL}/api/documents/convert-and-embed`,
+            { files },
+            {
+                headers: { Authorization: `Bearer ${token}` },
+                timeout: 60000
+            }
+        );
+
+        console.log('✅ Document Convert & Embed - PASSED\n');
+        console.log(`   Total Files: ${response.data.data.totalFiles}`);
+        console.log(`   Credits Charged: ${response.data.data.totalCreditsCharged}\n`);
+
         const timestamp = Date.now();
-        const filename = `image_${timestamp}.png`;
-        const filepath = path.join(OUTPUT_DIRS.images, filename);
+        const outputPath = path.join(OUTPUT_DIR, `converted_${timestamp}.json`);
+        fs.writeFileSync(outputPath, JSON.stringify(response.data.data, null, 2));
+        console.log(`   💾 Results saved: ${outputPath}\n`);
 
-        fs.writeFileSync(filepath, response.data);
-        console.log(`   💾 Saved: ${filepath}`);
-    } catch (error: any) {
-        console.error(`   ⚠️  Failed to save image: ${error.message}`);
-    }
-}
-
-function saveAudio(base64Audio: string) {
-    try {
-        const timestamp = Date.now();
-        const filename = `audio_${timestamp}.mp3`;
-        const filepath = path.join(OUTPUT_DIRS.audio, filename);
-
-        const buffer = Buffer.from(base64Audio, 'base64');
-        fs.writeFileSync(filepath, buffer);
-        console.log(`   💾 Saved: ${filepath}`);
-    } catch (error: any) {
-        console.error(`   ⚠️  Failed to save audio: ${error.message}`);
-    }
-}
-
-async function testHealth() {
-    try {
-        const response = await axios.get(`${API_BASE_URL}/health`, { timeout: 5000 });
-        const passed = response.data.status === 'ok';
-        console.log(`${passed ? '✅' : '❌'} Health - ${passed ? 'PASSED' : 'FAILED'}`);
-        return passed;
-    } catch (error: any) {
-        console.log(`❌ Health - FAILED`);
-        console.error('Error details:', {
-            status: error.response?.status,
-            message: error.message,
-            code: error.code
+        response.data.data.files.forEach((file: any) => {
+            console.log(`   📄 ${file.filename}`);
+            console.log(`      Characters: ${file.characterCount}`);
+            console.log(`      Embedding: ${file.dimensions}D vector`);
+            console.log(`      Text preview: ${file.text.substring(0, 100)}...\n`);
         });
+
+        return true;
+    } catch (error: any) {
+        console.log('❌ Document Convert & Embed - FAILED');
+        console.error('   Error:', error.response?.data || error.message, '\n');
+        return false;
+    }
+}
+
+async function testYanAvatar(token: string) {
+    try {
+        console.log('🤖 Testing YanAvatar...');
+
+        const response = await axios.post(
+            `${API_BASE_URL}/api/yanavatar`,
+            {
+                userPrompt: 'What is the weather like?',
+                relevantDocuments: [
+                    {
+                        filename: 'test.txt',
+                        text: 'The weather today is sunny and warm with temperatures around 25 degrees Celsius.'
+                    }
+                ]
+            },
+            {
+                headers: { Authorization: `Bearer ${token}` },
+                timeout: 60000
+            }
+        );
+
+        console.log('✅ YanAvatar - PASSED\n');
+        console.log(`   Text Response: ${response.data.data.textResponse}`);
+        console.log(`   Documents Used: ${response.data.data.documentsUsed}`);
+        console.log(`   Audio Size: ${Math.round(response.data.data.audio.length / 1024)} KB\n`);
+
+        const timestamp = Date.now();
+        const audioPath = path.join(OUTPUT_DIR, `yanavatar_${timestamp}.mp3`);
+        fs.writeFileSync(audioPath, Buffer.from(response.data.data.audio, 'base64'));
+        console.log(`   💾 Audio saved: ${audioPath}\n`);
+
+        return true;
+    } catch (error: any) {
+        console.log('❌ YanAvatar - FAILED');
+        console.error('   Error:', error.response?.data || error.message, '\n');
+        return false;
+    }
+}
+
+async function testImageGeneration(token: string) {
+    try {
+        console.log('🎨 Testing Image Generation...');
+
+        const response = await axios.post(
+            `${API_BASE_URL}/api/image`,
+            {
+                prompt: 'A beautiful sunset over mountains',
+                imageBase64: ''
+            },
+            {
+                headers: { Authorization: `Bearer ${token}` },
+                timeout: 60000
+            }
+        );
+
+        console.log('✅ Image Generation - PASSED\n');
+        console.log(`   Image URL: ${response.data.data.imageUrl}\n`);
+
+        return true;
+    } catch (error: any) {
+        console.log('❌ Image Generation - FAILED');
+        console.error('   Error:', error.response?.data || error.message, '\n');
         return false;
     }
 }
 
 async function runTests() {
+    console.log('🧪 API Tests\n');
+    console.log('🌐 API Base URL:', API_BASE_URL, '\n');
+
+    const results = {
+        health: false,
+        documentConvert: false,
+        yanAvatar: false,
+        imageGeneration: false
+    };
+
+    // Test 1: Health Check (no auth)
+    results.health = await testHealthCheck();
+
+    if (!results.health) {
+        console.log('❌ API not responding. Stopping tests.\n');
+        process.exit(1);
+    }
+
+    // Get auth token
     const token = await getToken();
-    const testName = process.argv[2];
 
-    console.log('🧪 Running tests...\n');
+    // Test 2: Document Convert & Embed
+    const testFiles = fs.readdirSync(DOCUMENTS_DIR);
+    const files = testFiles
+        .map(loadTestFile)
+        .filter((f): f is { filename: string; contentBase64: string } => f !== null);
 
-    const results = [];
-
-    if (!testName || testName === 'health') {
-        results.push(await testHealth());
+    if (files.length > 0) {
+        results.documentConvert = await testDocumentConvertAndEmbed(files, token);
+    } else {
+        console.log('⚠️  No test files found in:', DOCUMENTS_DIR, '\n');
     }
 
-    if (!testName || testName === 'llm') {
-        results.push(await testEndpoint('LLM', '/api/llm', TEST_DATA.llm, token));
-    }
+    // Test 3: YanAvatar
+    results.yanAvatar = await testYanAvatar(token);
 
-    if (!testName || testName === 'tts') {
-        results.push(await testEndpoint('TTS', '/api/tts', TEST_DATA.tts, token));
-    }
+    // Test 4: Image Generation
+    results.imageGeneration = await testImageGeneration(token);
 
-    if (!testName || testName === 'image') {
-        results.push(await testEndpoint('Image', '/api/image', TEST_DATA.image, token));
-    }
+    // Summary
+    const passed = Object.values(results).filter(r => r).length;
+    const total = Object.values(results).length;
 
-    const passed = results.filter(r => r).length;
-    console.log(`\n📊 ${passed}/${results.length} tests passed\n`);
+    console.log('📊 Test Summary:');
+    console.log(`   Health Check: ${results.health ? '✅' : '❌'}`);
+    console.log(`   Document Convert & Embed: ${results.documentConvert ? '✅' : '❌'}`);
+    console.log(`   YanAvatar: ${results.yanAvatar ? '✅' : '❌'}`);
+    console.log(`   Image Generation: ${results.imageGeneration ? '✅' : '❌'}`);
+    console.log(`\n   Total: ${passed}/${total} passed\n`);
 
-    process.exit(passed === results.length ? 0 : 1);
+    process.exit(passed === total ? 0 : 1);
 }
 
 runTests().catch(error => {

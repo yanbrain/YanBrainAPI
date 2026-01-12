@@ -5,7 +5,7 @@ import * as path from 'path';
 
 const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:8080';
 const TOKEN_CACHE_FILE = path.join(__dirname, '.token-cache.json');
-const OUTPUT_DIR = path.join(__dirname, '..', '..', 'testing', 'output', 'yanavatar');
+const OUTPUT_DIR = path.join(__dirname, '..', 'output', 'audio');
 
 // Ensure output directory exists
 if (!fs.existsSync(OUTPUT_DIR)) {
