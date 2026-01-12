@@ -17,7 +17,7 @@ dotenv.config();
 
 // Initialize Firebase Admin (for token verification)
 admin.initializeApp({
-  projectId: process.env.FIREBASE_PROJECT_ID
+    projectId: process.env.FIREBASE_PROJECT_ID
 });
 
 // Create Express app
@@ -31,12 +31,12 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Health check endpoint
 app.get('/health', (_req: Request, res: Response) => {
-  res.json({ 
-    status: 'ok', 
-    service: 'YanBrain API Client',
-    timestamp: new Date().toISOString(),
-    version: '1.0.0'
-  });
+    res.json({
+        status: 'ok',
+        service: 'YanBrain API Client',
+        timestamp: new Date().toISOString(),
+        version: '1.0.0'
+    });
 });
 
 // API Routes
@@ -47,14 +47,14 @@ app.use('/api/embeddings', embeddingRoutes);
 
 // 404 handler
 app.use((_req: Request, res: Response) => {
-  res.status(404).json({
-    success: false,
-    error: {
-      code: 'NOT_FOUND',
-      message: 'Endpoint not found',
-      statusCode: 404
-    }
-  });
+    res.status(404).json({
+        success: false,
+        error: {
+            code: 'NOT_FOUND',
+            message: 'Endpoint not found',
+            statusCode: 404
+        }
+    });
 });
 
 // Error handling middleware (must be last)
@@ -62,23 +62,23 @@ app.use(errorMiddleware);
 
 // Start server
 app.listen(PORT, () => {
-  console.log(`🚀 YanBrain API Client running on port ${PORT}`);
-  console.log(`📍 Health check: http://localhost:${PORT}/health`);
-  console.log(`🔧 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`\n✅ Available Endpoints:`);
-  console.log(`   POST /api/llm - Generate text from LLM`);
-  console.log(`   POST /api/tts - Text to speech`);
-  console.log(`   POST /api/image - Generate images`);
-  console.log(`   POST /api/embeddings - Generate embeddings`);
+    console.log(`🚀 YanBrain API Client running on port ${PORT}`);
+    console.log(`📍 Health check: http://localhost:${PORT}/health`);
+    console.log(`🔧 Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`\n✅ Available Endpoints:`);
+    console.log(`   POST /api/llm - Generate text from LLM`);
+    console.log(`   POST /api/tts - Text to speech`);
+    console.log(`   POST /api/image - Generate images`);
+    console.log(`   POST /api/embeddings - Convert documents & generate embeddings`);
 });
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
-  console.log('SIGTERM signal received: closing HTTP server');
-  process.exit(0);
+    console.log('SIGTERM signal received: closing HTTP server');
+    process.exit(0);
 });
 
 process.on('SIGINT', () => {
-  console.log('SIGINT signal received: closing HTTP server');
-  process.exit(0);
+    console.log('SIGINT signal received: closing HTTP server');
+    process.exit(0);
 });

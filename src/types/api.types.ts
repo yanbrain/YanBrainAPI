@@ -3,27 +3,27 @@
 // ============================================================================
 
 export interface LLMRequest {
-  message: string;
-  embeddingFileIds?: string[];
+    message: string;
+    embeddingFileIds?: string[];
 }
 
 export interface TTSRequest {
-  text: string;
-  voiceId?: string;
+    text: string;
+    voiceId?: string;
 }
 
 export interface ImageRequest {
-  prompt: string;
-  imageBase64: string;
+    prompt: string;
+    imageBase64: string;
 }
 
 export interface FileUpload {
-  filename: string;
-  contentBase64: string;
+    filename: string;
+    contentBase64: string;
 }
 
 export interface EmbeddingRequest {
-  files: FileUpload[];
+    files: FileUpload[];
 }
 
 // ============================================================================
@@ -31,37 +31,39 @@ export interface EmbeddingRequest {
 // ============================================================================
 
 export interface ApiResponse<T> {
-  success: boolean;
-  data?: T;
-  error?: ApiError;
+    success: boolean;
+    data?: T;
+    error?: ApiError;
 }
 
 export interface ApiError {
-  code: string;
-  message: string;
-  statusCode: number;
-  details?: Record<string, any>;
+    code: string;
+    message: string;
+    statusCode: number;
+    details?: Record<string, any>;
 }
 
 export interface LLMResponse {
-  response: string;
+    response: string;
 }
 
 export interface TTSResponse {
-  audio: string; // base64 encoded
+    audio: string; // base64 encoded
 }
 
 export interface ImageResponse {
-  imageUrl: string;
+    imageUrl: string;
 }
 
 export interface EmbeddingFile {
-  fileId: string;
-  text: string;
+    fileId: string;
+    filename: string;
+    embedding: number[];
+    dimensions: number;
 }
 
 export interface EmbeddingResponse {
-  files: EmbeddingFile[];
+    files: EmbeddingFile[];
 }
 
 // ============================================================================
@@ -69,33 +71,24 @@ export interface EmbeddingResponse {
 // ============================================================================
 
 export interface ChatMessage {
-  role: 'system' | 'user' | 'assistant';
-  content: string;
+    role: 'system' | 'user' | 'assistant';
+    content: string;
 }
 
 export interface ModelInfo {
-  provider: string;
-  model: string;
+    provider: string;
+    model: string;
 }
 
 export interface ProviderInfo {
-  provider: string;
-  [key: string]: any;
+    provider: string;
+    [key: string]: any;
 }
 
 // ============================================================================
 // YanBrainServer Types
 // ============================================================================
 
-export interface CreditsBalanceResponse {
-  creditsBalance: number;
-}
-
 export interface CreditsConsumeRequest {
-  cost: number;
-}
-
-export interface CreditsConsumeResponse {
-  success: boolean;
-  remainingCredits: number;
+    cost: number;
 }
