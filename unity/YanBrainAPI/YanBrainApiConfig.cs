@@ -1,10 +1,16 @@
 using System.IO;
+using Sisus.Init;
 using UnityEngine;
+using YanPlay.YLogger;
+using static YanPlay.YLogger.YLog;
 
 namespace YanBrainAPI
 {
-    [CreateAssetMenu(menuName = "YanBrainAPI/YanBrainConfig", fileName = "YanBrainConfig")]
-    public class YanBrainConfig : ScriptableObject
+    [EnableLogger]
+    [CreateAssetMenu(menuName = "YanBrainAPI/YanBrainApiConfig", fileName = "YanBrainApiConfig")]
+    [Service(typeof(YanBrainApiConfig), ResourcePath = "YanBrainApiConfig")]
+
+    public class YanBrainApiConfig : ScriptableObject
     {
         [Header("Backend")]
         public string BaseUrl = "http://localhost:8080";
@@ -113,7 +119,7 @@ namespace YanBrainAPI
             }
             catch (System.Exception ex)
             {
-                Debug.LogError($"Failed to create directory {path}: {ex.Message}");
+                LogError($"Failed to create directory {path}: {ex.Message}");
             }
         }
 

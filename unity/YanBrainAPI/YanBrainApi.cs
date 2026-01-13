@@ -1,3 +1,6 @@
+// YanBrainAPI/YanBrainApi.cs - ADD EVENTS
+
+using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -9,33 +12,54 @@ namespace YanBrainAPI
     {
         private readonly YanHttp _http;
 
+        #region Events
+        /// <summary>
+        /// Fired when server returns 401 Unauthorized
+        /// </summary>
+        public event Action OnAuthenticationFailed;
+        
+        /// <summary>
+        /// Fired when server returns 402 Payment Required (out of credits)
+        /// </summary>
+        public event Action OnCreditsExhausted;
+        
+        /// <summary>
+        /// Fired when network/timeout errors occur
+        /// </summary>
+        public event Action<string> OnNetworkError;
+        #endregion
+
         public YanBrainApi(YanHttp http)
         {
             _http = http;
+            
+            // Subscribe to YanHttp events
+            _http.OnAuthenticationFailed += () => OnAuthenticationFailed?.Invoke();
+            _http.OnCreditsExhausted += () => OnCreditsExhausted?.Invoke();
+            _http.OnNetworkError += (error) => OnNetworkError?.Invoke(error);
         }
 
-        // -----------------
-        // Health
-        // -----------------
         public async Task<HealthPayload> HealthAsync(CancellationToken ct = default)
         {
-            // /health is not under /api and your server doesn't require auth for it
             return await _http.GetJsonAsync<HealthPayload>("/health", authRequired: false, ct);
         }
 
-        // -----------------
-        // LLM
-        // -----------------
-        public async Task<LlmPayload> LlmAsync(string prompt, string systemPrompt = null, CancellationToken ct = default)
+        public async Task<LlmPayload> LlmAsync(
+            string prompt,
+            string systemPrompt = null,
+            string ragContext = null,
+            CancellationToken ct = default)
         {
-            var req = new LlmRequest { Prompt = prompt, SystemPrompt = systemPrompt };
+            var req = new LlmRequest
+            {
+                Prompt = prompt,
+                SystemPrompt = systemPrompt,
+                RagContext = ragContext
+            };
             var res = await _http.PostJsonAsync<ApiResponse<LlmPayload>>("/api/llm", req, authRequired: true, ct);
             return res.Data;
         }
 
-        // -----------------
-        // TTS
-        // -----------------
         public async Task<TtsPayload> TtsAsync(string text, string voiceId = null, CancellationToken ct = default)
         {
             var req = new TtsRequest { Text = text, VoiceId = voiceId };
@@ -43,9 +67,6 @@ namespace YanBrainAPI
             return res.Data;
         }
 
-        // -----------------
-        // Image
-        // -----------------
         public async Task<ImagePayload> ImageAsync(string prompt, string imageBase64 = null, CancellationToken ct = default)
         {
             var req = new ImageRequest { Prompt = prompt, ImageBase64 = imageBase64 };
@@ -53,9 +74,6 @@ namespace YanBrainAPI
             return res.Data;
         }
 
-        // -----------------
-        // Document Convert
-        // -----------------
         public async Task<DocumentConvertPayload> DocumentConvertAsync(List<FileUpload> files, CancellationToken ct = default)
         {
             var req = new DocumentConvertRequest { Files = files };
@@ -63,9 +81,6 @@ namespace YanBrainAPI
             return res.Data;
         }
 
-        // -----------------
-        // Embeddings
-        // -----------------
         public async Task<EmbeddingPayload> EmbeddingsAsync(List<EmbeddingItem> items, CancellationToken ct = default)
         {
             var req = new EmbeddingRequest { Items = items };
@@ -73,25 +88,41 @@ namespace YanBrainAPI
             return res.Data;
         }
 
-        // -----------------
-        // YanAvatar (server-side LLM+TTS; you MUST send relevantDocuments)
-        // -----------------
-        public async Task<YanAvatarPayload> YanAvatarAsync(
+        public async Task<RagTextPayload> RagTextAsync(
             string userPrompt,
-            List<RelevantDocument> relevantDocuments,
+            string ragContext,
             string systemPrompt = null,
-            string voiceId = null,
+            int? maxResponseChars = null,
             CancellationToken ct = default)
         {
-            var req = new YanAvatarRequest
+            var req = new RagTextRequest
             {
                 UserPrompt = userPrompt,
-                RelevantDocuments = relevantDocuments,
+                RagContext = ragContext,
                 SystemPrompt = systemPrompt,
-                VoiceId = voiceId
+                MaxResponseChars = maxResponseChars
             };
+            var res = await _http.PostJsonAsync<ApiResponse<RagTextPayload>>("/api/rag/text", req, authRequired: true, ct);
+            return res.Data;
+        }
 
-            var res = await _http.PostJsonAsync<ApiResponse<YanAvatarPayload>>("/api/yanavatar", req, authRequired: true, ct);
+        public async Task<RagAudioPayload> RagAudioAsync(
+            string userPrompt,
+            string ragContext,
+            string systemPrompt = null,
+            string voiceId = null,
+            int? maxResponseChars = null,
+            CancellationToken ct = default)
+        {
+            var req = new RagAudioRequest
+            {
+                UserPrompt = userPrompt,
+                RagContext = ragContext,
+                SystemPrompt = systemPrompt,
+                VoiceId = voiceId,
+                MaxResponseChars = maxResponseChars
+            };
+            var res = await _http.PostJsonAsync<ApiResponse<RagAudioPayload>>("/api/rag/audio", req, authRequired: true, ct);
             return res.Data;
         }
     }

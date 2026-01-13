@@ -1,11 +1,9 @@
+// Assets/Scripts/YanBrainAPI/Networking/YanModels.cs - UPDATE
 using System.Collections.Generic;
 using Newtonsoft.Json;
 
 namespace YanBrainAPI.Networking
 {
-    // =========================
-    // Shared Envelope
-    // =========================
     public sealed class ApiResponse<T>
     {
         [JsonProperty("success")] public bool Success { get; set; }
@@ -21,9 +19,6 @@ namespace YanBrainAPI.Networking
         [JsonProperty("details")] public object Details { get; set; }
     }
 
-    // =========================
-    // /health
-    // =========================
     public sealed class HealthPayload
     {
         [JsonProperty("status")] public string Status { get; set; }
@@ -32,18 +27,18 @@ namespace YanBrainAPI.Networking
         [JsonProperty("version")] public string Version { get; set; }
     }
 
-    // =========================
-    // /api/llm
-    // =========================
     public sealed class LlmRequest
     {
         [JsonProperty("prompt")] public string Prompt { get; set; }
 
         [JsonProperty("systemPrompt", NullValueHandling = NullValueHandling.Ignore)]
         public string SystemPrompt { get; set; }
+
+        [JsonProperty("ragContext", NullValueHandling = NullValueHandling.Ignore)]
+        public string RagContext { get; set; }
     }
 
-    public sealed class LlmModelInfo
+    public sealed class ModelInfo
     {
         [JsonProperty("provider")] public string Provider { get; set; }
         [JsonProperty("model")] public string Model { get; set; }
@@ -52,12 +47,9 @@ namespace YanBrainAPI.Networking
     public sealed class LlmPayload
     {
         [JsonProperty("response")] public string Response { get; set; }
-        [JsonProperty("model")] public LlmModelInfo Model { get; set; }
+        [JsonProperty("model")] public ModelInfo Model { get; set; }
     }
 
-    // =========================
-    // /api/tts
-    // =========================
     public sealed class TtsRequest
     {
         [JsonProperty("text")] public string Text { get; set; }
@@ -71,9 +63,6 @@ namespace YanBrainAPI.Networking
         [JsonProperty("audio")] public string AudioBase64 { get; set; }
     }
 
-    // =========================
-    // /api/image
-    // =========================
     public sealed class ImageRequest
     {
         [JsonProperty("prompt")] public string Prompt { get; set; }
@@ -87,9 +76,6 @@ namespace YanBrainAPI.Networking
         [JsonProperty("imageUrl")] public string ImageUrl { get; set; }
     }
 
-    // =========================
-    // /api/documents/convert
-    // =========================
     public sealed class FileUpload
     {
         [JsonProperty("filename")] public string Filename { get; set; }
@@ -116,9 +102,6 @@ namespace YanBrainAPI.Networking
         [JsonProperty("totalCreditsCharged")] public int TotalCreditsCharged { get; set; }
     }
 
-    // =========================
-    // /api/embeddings
-    // =========================
     public sealed class EmbeddingItem
     {
         [JsonProperty("id", NullValueHandling = NullValueHandling.Ignore)]
@@ -139,10 +122,7 @@ namespace YanBrainAPI.Networking
     {
         [JsonProperty("id")] public string Id { get; set; }
         [JsonProperty("filename")] public string Filename { get; set; }
-
-        // Server returns number[]; Json.NET maps to float[] fine.
         [JsonProperty("embedding")] public float[] Embedding { get; set; }
-
         [JsonProperty("dimensions")] public int Dimensions { get; set; }
         [JsonProperty("characterCount")] public int CharacterCount { get; set; }
     }
@@ -161,31 +141,48 @@ namespace YanBrainAPI.Networking
         [JsonProperty("provider")] public EmbeddingProviderInfo Provider { get; set; }
     }
 
-    // =========================
-    // /api/yanavatar
-    // =========================
-    public sealed class RelevantDocument
-    {
-        [JsonProperty("filename")] public string Filename { get; set; }
-        [JsonProperty("text")] public string Text { get; set; }
-    }
-
-    public sealed class YanAvatarRequest
+    public sealed class RagTextRequest
     {
         [JsonProperty("userPrompt")] public string UserPrompt { get; set; }
-        [JsonProperty("relevantDocuments")] public List<RelevantDocument> RelevantDocuments { get; set; }
+        [JsonProperty("ragContext")] public string RagContext { get; set; }
+
+        [JsonProperty("systemPrompt", NullValueHandling = NullValueHandling.Ignore)]
+        public string SystemPrompt { get; set; }
+
+        [JsonProperty("maxResponseChars", NullValueHandling = NullValueHandling.Ignore)]
+        public int? MaxResponseChars { get; set; }
+    }
+
+    public sealed class RagTextPayload
+    {
+        [JsonProperty("textResponse")] public string TextResponse { get; set; }
+        [JsonProperty("model")] public ModelInfo Model { get; set; }
+    }
+
+    public sealed class RagAudioRequest
+    {
+        [JsonProperty("userPrompt")] public string UserPrompt { get; set; }
+        [JsonProperty("ragContext")] public string RagContext { get; set; }
 
         [JsonProperty("systemPrompt", NullValueHandling = NullValueHandling.Ignore)]
         public string SystemPrompt { get; set; }
 
         [JsonProperty("voiceId", NullValueHandling = NullValueHandling.Ignore)]
         public string VoiceId { get; set; }
+
+        [JsonProperty("maxResponseChars", NullValueHandling = NullValueHandling.Ignore)]
+        public int? MaxResponseChars { get; set; }
     }
 
-    public sealed class YanAvatarPayload
+    public sealed class RagAudioPayload
     {
         [JsonProperty("audio")] public string AudioBase64 { get; set; }
         [JsonProperty("textResponse")] public string TextResponse { get; set; }
-        [JsonProperty("documentsUsed")] public int DocumentsUsed { get; set; }
+    }
+
+    public sealed class RelevantDocument
+    {
+        public string Filename { get; set; }
+        public string Text { get; set; }
     }
 }

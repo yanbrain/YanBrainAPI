@@ -1,0 +1,4 @@
+{
+  "name": "YanBrainAPI",
+  "references":[ "InitArgs.Services", "YLogger", "InitArgs"]
+}

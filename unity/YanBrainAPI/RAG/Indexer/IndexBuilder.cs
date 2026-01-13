@@ -3,28 +3,22 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEngine;
-using YanBrainAPI.RAG;
+using YanPlay.YLogger;
+using static YanPlay.YLogger.YLog;
 
-namespace YanBrainAPI.RAG
+namespace YanBrainAPI.RAG.Indexer
 {
     /// <summary>
     /// Builds search index from existing embeddings
     /// </summary>
+    [EnableLogger]
     public sealed class IndexBuilder
     {
-        private readonly YanBrainConfig _config;
-        private readonly EmbeddingStorage _storage;
+        private readonly RAGContext _context;
 
-        public IndexBuilder(YanBrainConfig config)
+        public IndexBuilder(RAGContext context)
         {
-            _config = config ?? throw new ArgumentNullException(nameof(config));
-            _storage = new EmbeddingStorage(
-                _config.GetEmbeddingsPath(),
-                _config.GetIndexPath(),
-                _config.GetConvertedDocumentsPath()
-            );
-
-            _config.EnsureFoldersExist();
+            _context = context ?? throw new ArgumentNullException(nameof(context));
         }
 
         // ==================== Build Index ====================
@@ -34,21 +28,21 @@ namespace YanBrainAPI.RAG
         /// </summary>
         public void BuildIndex()
         {
-            var embeddingsDir = _config.GetEmbeddingsPath();
+            var embeddingsDir = _context.ApiConfig.GetEmbeddingsPath();
             if (!Directory.Exists(embeddingsDir))
             {
-                Debug.LogWarning($"[IndexBuilder] Embeddings folder not found: {embeddingsDir}");
+                LogWarning($"[IndexBuilder] Embeddings folder not found: {embeddingsDir}");
                 return;
             }
 
             var embeddingFiles = Directory.GetFiles(embeddingsDir, "*.embeddings");
             if (embeddingFiles.Length == 0)
             {
-                Debug.LogWarning("[IndexBuilder] No embeddings found. Run EmbeddingService first.");
+                LogWarning("[IndexBuilder] No embeddings found. Run EmbeddingService first.");
                 return;
             }
 
-            Debug.Log($"[IndexBuilder] Building index from {embeddingFiles.Length} embeddings...");
+            Log($"[IndexBuilder] Building index from {embeddingFiles.Length} embeddings...");
 
             var summaries = new List<DocumentSummary>();
 
@@ -57,11 +51,11 @@ namespace YanBrainAPI.RAG
                 try
                 {
                     var filename = Path.GetFileName(filePath).Replace(".embeddings", "");
-                    var docEmbeddings = _storage.LoadDocumentEmbeddings(filename);
+                    var docEmbeddings = _context.Storage.LoadDocumentEmbeddings(filename);
 
                     if (docEmbeddings == null || docEmbeddings.Chunks.Count == 0)
                     {
-                        Debug.LogWarning($"[IndexBuilder] Skipping {filename}: no chunks");
+                        LogWarning($"[IndexBuilder] Skipping {filename}: no chunks");
                         continue;
                     }
 
@@ -72,7 +66,7 @@ namespace YanBrainAPI.RAG
 
                     if (summaryEmbedding == null)
                     {
-                        Debug.LogWarning($"[IndexBuilder] Skipping {filename}: failed to average");
+                        LogWarning($"[IndexBuilder] Skipping {filename}: failed to average");
                         continue;
                     }
 
@@ -83,17 +77,17 @@ namespace YanBrainAPI.RAG
                         LastModifiedUtc = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
                     });
 
-                    Debug.Log($"[IndexBuilder] ✓ {filename} indexed");
+                    Log($"[IndexBuilder] ✓ {filename} indexed");
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogError($"[IndexBuilder] Failed to index {Path.GetFileName(filePath)}: {ex.Message}");
+                    LogError($"[IndexBuilder] Failed to index {Path.GetFileName(filePath)}: {ex.Message}");
                 }
             }
 
             // Save index
-            _storage.SaveDocumentSummaries(summaries);
-            Debug.Log($"[IndexBuilder] Index built: {summaries.Count} documents");
+            _context.Storage.SaveIndex(summaries);
+            Log($"[IndexBuilder] Index built: {summaries.Count} documents");
         }
 
         /// <summary>
@@ -104,12 +98,12 @@ namespace YanBrainAPI.RAG
             if (string.IsNullOrWhiteSpace(filename))
                 throw new ArgumentException("Filename required");
 
-            Debug.Log($"[IndexBuilder] Updating index for {filename}...");
+            Log($"[IndexBuilder] Updating index for {filename}...");
 
-            var docEmbeddings = _storage.LoadDocumentEmbeddings(filename);
+            var docEmbeddings = _context.Storage.LoadDocumentEmbeddings(filename);
             if (docEmbeddings == null || docEmbeddings.Chunks.Count == 0)
             {
-                Debug.LogWarning($"[IndexBuilder] No embeddings found for {filename}");
+                LogWarning($"[IndexBuilder] No embeddings found for {filename}");
                 return;
             }
 
@@ -120,12 +114,12 @@ namespace YanBrainAPI.RAG
 
             if (summaryEmbedding == null)
             {
-                Debug.LogWarning($"[IndexBuilder] Failed to create summary for {filename}");
+                LogWarning($"[IndexBuilder] Failed to create summary for {filename}");
                 return;
             }
 
             // Load existing index
-            var summaries = _storage.LoadDocumentSummaries();
+            var summaries = _context.Storage.LoadIndex();
 
             // Remove old entry if exists
             summaries.RemoveAll(s => s.Filename == filename);
@@ -139,8 +133,8 @@ namespace YanBrainAPI.RAG
             });
 
             // Save updated index
-            _storage.SaveDocumentSummaries(summaries);
-            Debug.Log($"[IndexBuilder] ✓ {filename} updated in index");
+            _context.Storage.SaveIndex(summaries);
+            Log($"[IndexBuilder] ✓ {filename} updated in index");
         }
 
         /// <summary>
@@ -151,17 +145,17 @@ namespace YanBrainAPI.RAG
             if (string.IsNullOrWhiteSpace(filename))
                 throw new ArgumentException("Filename required");
 
-            var summaries = _storage.LoadDocumentSummaries();
+            var summaries = _context.Storage.LoadIndex();
             var removed = summaries.RemoveAll(s => s.Filename == filename);
 
             if (removed > 0)
             {
-                _storage.SaveDocumentSummaries(summaries);
-                Debug.Log($"[IndexBuilder] Removed {filename} from index");
+                _context.Storage.SaveIndex(summaries);
+                Log($"[IndexBuilder] Removed {filename} from index");
             }
             else
             {
-                Debug.LogWarning($"[IndexBuilder] {filename} not found in index");
+                LogWarning($"[IndexBuilder] {filename} not found in index");
             }
         }
 
@@ -170,8 +164,8 @@ namespace YanBrainAPI.RAG
         /// </summary>
         public void ClearIndex()
         {
-            _storage.SaveDocumentSummaries(new List<DocumentSummary>());
-            Debug.Log("[IndexBuilder] Index cleared");
+            _context.Storage.SaveIndex(new List<DocumentSummary>());
+            Log("[IndexBuilder] Index cleared");
         }
 
         // ==================== Helpers ====================
@@ -188,7 +182,7 @@ namespace YanBrainAPI.RAG
             {
                 if (emb == null || emb.Length != dims)
                 {
-                    Debug.LogWarning($"[IndexBuilder] Skipping invalid embedding (expected {dims}D)");
+                    LogWarning($"[IndexBuilder] Skipping invalid embedding (expected {dims}D)");
                     continue;
                 }
 
@@ -204,12 +198,12 @@ namespace YanBrainAPI.RAG
 
         public int GetIndexedCount()
         {
-            return _storage.LoadDocumentSummaries().Count;
+            return _context.Storage.LoadIndex().Count;
         }
 
         public List<string> GetIndexedDocuments()
         {
-            return _storage.LoadDocumentSummaries()
+            return _context.Storage.LoadIndex()
                 .Select(s => s.Filename)
                 .ToList();
         }

@@ -5,31 +5,23 @@ using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
 using YanBrainAPI.Networking;
+using YanPlay.YLogger;
+using static YanPlay.YLogger.YLog;
 
 namespace YanBrainAPI.RAG
 {
     /// <summary>
-    /// Handles querying indexed documents (read-only)
+    /// Searches indexed documents (read-only)
     /// </summary>
+    [EnableLogger]
     public sealed class DocumentSearcher
     {
-        private readonly YanBrainApi _api;
-        private readonly YanBrainConfig _config;
-        private readonly EmbeddingStorage _storage;
+        private readonly RAGContext _context;
         private readonly SimilaritySearch _search;
-        private readonly RAGConfig _ragConfig;
 
-        public DocumentSearcher(YanBrainApi api, YanBrainConfig config, RAGConfig ragConfig = null)
+        public DocumentSearcher(RAGContext context)
         {
-            _api = api ?? throw new ArgumentNullException(nameof(api));
-            _config = config ?? throw new ArgumentNullException(nameof(config));
-            _ragConfig = ragConfig ?? new RAGConfig();
-
-            _storage = new EmbeddingStorage(
-                _config.GetEmbeddingsPath(),
-                _config.GetIndexPath(),
-                _config.GetConvertedDocumentsPath()
-            );
+            _context = context ?? throw new ArgumentNullException(nameof(context));
             _search = new SimilaritySearch();
         }
 
@@ -44,29 +36,29 @@ namespace YanBrainAPI.RAG
                 throw new ArgumentException("User prompt required");
 
             // Load index
-            var summaries = _storage.LoadDocumentSummaries();
+            var summaries = _context.Storage.LoadIndex();
             if (summaries.Count == 0)
                 throw new Exception("No index found. Run IndexBuilder.BuildIndex() first.");
 
-            Debug.Log($"[DocumentSearcher] Query: \"{userPrompt}\"");
+            Log($"[DocumentSearcher] Query: \"{userPrompt}\"");
 
             // Embed query
             var queryItems = new List<EmbeddingItem> { new EmbeddingItem { Id = "query", Text = userPrompt } };
-            var queryResult = await _api.EmbeddingsAsync(queryItems, ct);
+            var queryResult = await _context.Api.EmbeddingsAsync(queryItems, ct);
             var queryEmbedding = queryResult.Items[0].Embedding;
 
             // Stage 1: Find relevant documents
             var relevantDocSummaries = _search.SearchDocuments(
                 queryEmbedding,
                 summaries,
-                _ragConfig.TopDocsStage1
+                _context.RagConfig.TopDocsStage1
             );
 
-            Debug.Log($"[DocumentSearcher] Stage 1: {relevantDocSummaries.Count} docs");
+            Log($"[DocumentSearcher] Stage 1: {relevantDocSummaries.Count} docs");
 
             // Load full embeddings for those docs
             var relevantDocs = relevantDocSummaries
-                .Select(s => _storage.LoadDocumentEmbeddings(s.Filename))
+                .Select(s => _context.Storage.LoadDocumentEmbeddings(s.Filename))
                 .Where(d => d != null)
                 .ToList();
 
@@ -77,21 +69,21 @@ namespace YanBrainAPI.RAG
             var searchResults = _search.SearchChunks(
                 queryEmbedding,
                 relevantDocs,
-                _ragConfig.TopChunksStage2,
-                _ragConfig.SimilarityThreshold
+                _context.RagConfig.TopChunksStage2,
+                _context.RagConfig.SimilarityThreshold
             );
 
-            Debug.Log($"[DocumentSearcher] Stage 2: {searchResults.Count} docs with chunks");
+            Log($"[DocumentSearcher] Stage 2: {searchResults.Count} docs with chunks");
 
             // Smart pack into budget
             var result = _search.SmartPack(
                 searchResults,
-                _ragConfig.MaxTotalChars,
-                _ragConfig.MaxDocs
+                _context.RagConfig.MaxTotalChars,
+                _context.RagConfig.MaxDocs
             );
 
             var totalChars = result.Sum(r => r.Text?.Length ?? 0);
-            Debug.Log($"[DocumentSearcher] Packed {result.Count} docs, {totalChars} chars");
+            Log($"[DocumentSearcher] Packed {result.Count} docs, {totalChars} chars");
 
             return result;
         }
@@ -100,19 +92,19 @@ namespace YanBrainAPI.RAG
 
         public int GetIndexedCount()
         {
-            return _storage.LoadDocumentSummaries().Count;
+            return _context.Storage.LoadIndex().Count;
         }
 
         public List<string> GetIndexedDocuments()
         {
-            return _storage.LoadDocumentSummaries()
+            return _context.Storage.LoadIndex()
                 .Select(s => s.Filename)
                 .ToList();
         }
 
         public bool IsIndexReady()
         {
-            return _storage.LoadDocumentSummaries().Count > 0;
+            return _context.Storage.LoadIndex().Count > 0;
         }
     }
 }
