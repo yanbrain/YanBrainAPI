@@ -5,7 +5,7 @@ export interface ILLMProvider {
         userPrompt: string,
         options?: {
             systemPrompt?: string;
-            embeddedText?: string;
+            ragContext?: string;
             maxResponseChars?: number;
         }
     ): Promise<string>;

@@ -1,37 +1,32 @@
+// src/server.ts
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import * as admin from 'firebase-admin';
 
-// Import middleware
 import { errorMiddleware } from './middleware/errorMiddleware';
 
-// Import PRODUCTION routes
 import documentConvertRoutes from './routes/documentConvertRoutes';
 import embeddingRoutes from './routes/embeddingRoutes';
-import yanAvatarRoutes from './routes/yanAvatarRoutes';
+import ragTextRoutes from './routes/ragTextRoutes';
+import ragAudioRoutes from './routes/ragAudioRoutes';
 import imageRoutes from './routes/imageRoutes';
 import llmRoutes from './routes/llmRoutes';
 import ttsRoutes from './routes/ttsRoutes';
 
-// Load environment variables
 dotenv.config();
 
-// Initialize Firebase Admin (for token verification)
 admin.initializeApp({
     projectId: process.env.FIREBASE_PROJECT_ID
 });
 
-// Create Express app
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-// Middleware
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Health check endpoint
 app.get('/health', (_req: Request, res: Response) => {
     res.json({
         status: 'ok',
@@ -42,19 +37,20 @@ app.get('/health', (_req: Request, res: Response) => {
 });
 
 // ============================================================================
-// PRODUCTION ROUTES
+// PUBLIC ROUTES (Firebase Auth Required)
 // ============================================================================
 app.use('/api/documents/convert', documentConvertRoutes);
 app.use('/api/embeddings', embeddingRoutes);
-
-app.use('/api/yanavatar', yanAvatarRoutes);
+app.use('/api/rag/text', ragTextRoutes);
+app.use('/api/rag/audio', ragAudioRoutes);
 app.use('/api/image', imageRoutes);
 
-// Keep LLM + TTS as production routes (callable externally)
+// ============================================================================
+// INTERNAL ROUTES (Internal Secret Required)
+// ============================================================================
 app.use('/api/llm', llmRoutes);
 app.use('/api/tts', ttsRoutes);
 
-// 404 handler
 app.use((_req: Request, res: Response) => {
     res.status(404).json({
         success: false,
@@ -66,25 +62,25 @@ app.use((_req: Request, res: Response) => {
     });
 });
 
-// Error handling middleware (must be last)
 app.use(errorMiddleware);
 
-// Start server
 app.listen(PORT, () => {
     console.log(`🚀 YanBrain API Client running on port ${PORT}`);
     console.log(`📍 Health check: http://localhost:${PORT}/health`);
     console.log(`🔧 Environment: ${process.env.NODE_ENV || 'development'}`);
 
-    console.log(`\n✅ Endpoints:`);
+    console.log(`\n✅ PUBLIC Endpoints (Firebase Auth):`);
     console.log(`   POST /api/documents/convert - Convert documents to text`);
     console.log(`   POST /api/embeddings - Generate embeddings from text`);
-    console.log(`   POST /api/yanavatar - Query with voice response`);
+    console.log(`   POST /api/rag/text - RAG query with text response`);
+    console.log(`   POST /api/rag/audio - RAG query with audio response`);
     console.log(`   POST /api/image - Generate images`);
-    console.log(`   POST /api/llm - Stateless LLM call`);
-    console.log(`   POST /api/tts - Text-to-speech`);
+
+    console.log(`\n🔒 INTERNAL Endpoints (Internal Secret):`);
+    console.log(`   POST /api/llm - Low-level LLM call`);
+    console.log(`   POST /api/tts - Low-level TTS call`);
 });
 
-// Graceful shutdown
 process.on('SIGTERM', () => {
     console.log('SIGTERM signal received: closing HTTP server');
     process.exit(0);

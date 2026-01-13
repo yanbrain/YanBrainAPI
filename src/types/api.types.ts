@@ -1,3 +1,4 @@
+// src/types/api.types.ts
 // ============================================================================
 // API Request Types
 // ============================================================================
@@ -71,25 +72,32 @@ export interface EmbeddingResponse {
 }
 
 // ============================================================================
-// YanAvatar Types
+// RAG Types
 // ============================================================================
 
-export interface RelevantDocument {
-    filename: string;
-    text: string;
+export interface RagTextRequest {
+    userPrompt: string;
+    ragContext: string;
+    systemPrompt?: string;
+    maxResponseChars?: number;
 }
 
-export interface YanAvatarRequest {
+export interface RagTextResponse {
+    textResponse: string;
+    model: ModelInfo;
+}
+
+export interface RagAudioRequest {
     userPrompt: string;
-    relevantDocuments: RelevantDocument[];
+    ragContext: string;
     systemPrompt?: string;
     voiceId?: string;
+    maxResponseChars?: number;
 }
 
-export interface YanAvatarResponse {
-    audio: string;          // base64 encoded MP3
-    textResponse: string;   // LLM response text
-    documentsUsed: number;
+export interface RagAudioResponse {
+    audio: string;
+    textResponse: string;
 }
 
 // ============================================================================
@@ -110,7 +118,7 @@ export interface ApiError {
 }
 
 export interface TTSResponse {
-    audio: string; // base64 encoded
+    audio: string;
 }
 
 export interface ImageResponse {

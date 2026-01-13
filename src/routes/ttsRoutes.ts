@@ -1,5 +1,6 @@
+// src/routes/ttsRoutes.ts - UPDATE
 import { Router, Request, Response, NextFunction } from 'express';
-import { authMiddleware } from '../middleware/authMiddleware';
+import { internalSecretMiddleware } from '../middleware/internalSecretMiddleware';
 import { ElevenLabsAdapter } from '../adapters/ElevenLabsAdapter';
 import { AppError } from '../errors/AppError';
 import { TTSRequest, ApiResponse, TTSResponse } from '../types/api.types';
@@ -9,10 +10,12 @@ const ttsAdapter = new ElevenLabsAdapter();
 
 /**
  * POST /api/tts
+ * Internal-only TTS endpoint
+ * Requires X-Yanbrain-Internal-Secret header
  */
 router.post(
     '/',
-    authMiddleware,
+    internalSecretMiddleware,
     async (
         req: Request<{}, {}, TTSRequest>,
         res: Response<ApiResponse<TTSResponse>>,
