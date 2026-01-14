@@ -82,67 +82,73 @@ namespace YanBrainAPI.Networking
             }
         }
 
-        private async Task<T> SendRequestAsync<T>(HttpRequestMessage request, CancellationToken ct)
+private async Task<T> SendRequestAsync<T>(HttpRequestMessage request, CancellationToken ct)
+{
+    HttpResponseMessage response = null;
+
+    try
+    {
+        response = await _httpClient.SendAsync(request, ct);
+
+        // READ RESPONSE BODY BEFORE THROWING (for error details)
+        var responseBody = await response.Content.ReadAsStringAsync();
+
+        // Check status code and emit events
+        if (response.StatusCode == HttpStatusCode.Unauthorized) // 401
         {
-            HttpResponseMessage response = null;
-
-            try
-            {
-                response = await _httpClient.SendAsync(request, ct);
-
-                // Check status code and emit events
-                if (response.StatusCode == HttpStatusCode.Unauthorized) // 401
-                {
-                    Debug.LogError($"[YanHttp] Authentication failed (401)");
-                    OnAuthenticationFailed?.Invoke();
-                    throw new UnauthorizedAccessException("Authentication failed");
-                }
-
-                if (response.StatusCode == HttpStatusCode.PaymentRequired) // 402
-                {
-                    Debug.LogError($"[YanHttp] Credits exhausted (402)");
-                    OnCreditsExhausted?.Invoke();
-                    throw new InvalidOperationException("Credits exhausted");
-                }
-
-                response.EnsureSuccessStatusCode();
-
-                var responseBody = await response.Content.ReadAsStringAsync();
-                return JsonConvert.DeserializeObject<T>(responseBody);
-            }
-            catch (TaskCanceledException)
-            {
-                var errorMsg = "Request timed out";
-                Debug.LogError($"[YanHttp] {errorMsg}");
-                OnNetworkError?.Invoke(errorMsg);
-                throw new TimeoutException(errorMsg);
-            }
-            catch (HttpRequestException ex)
-            {
-                var errorMsg = $"Network error: {ex.Message}";
-                Debug.LogError($"[YanHttp] {errorMsg}");
-                OnNetworkError?.Invoke(errorMsg);
-                throw;
-            }
-            catch (UnauthorizedAccessException)
-            {
-                throw; // Already logged and event emitted
-            }
-            catch (InvalidOperationException)
-            {
-                throw; // Already logged and event emitted
-            }
-            catch (Exception ex)
-            {
-                var errorMsg = $"Request failed: {ex.Message}";
-                Debug.LogError($"[YanHttp] {errorMsg}");
-                OnNetworkError?.Invoke(errorMsg);
-                throw;
-            }
-            finally
-            {
-                response?.Dispose();
-            }
+            Debug.LogError($"[YanHttp] Authentication failed (401): {responseBody}");
+            OnAuthenticationFailed?.Invoke();
+            throw new UnauthorizedAccessException("Authentication failed");
         }
+
+        if (response.StatusCode == HttpStatusCode.PaymentRequired) // 402
+        {
+            Debug.LogError($"[YanHttp] Credits exhausted (402): {responseBody}");
+            OnCreditsExhausted?.Invoke();
+            throw new InvalidOperationException("Credits exhausted");
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            Debug.LogError($"[YanHttp] Request failed ({response.StatusCode}): {responseBody}");
+            throw new HttpRequestException($"Response status code does not indicate success: {(int)response.StatusCode} ({response.StatusCode}).");
+        }
+
+        return JsonConvert.DeserializeObject<T>(responseBody);
+    }
+    catch (TaskCanceledException)
+    {
+        var errorMsg = "Request timed out";
+        Debug.LogError($"[YanHttp] {errorMsg}");
+        OnNetworkError?.Invoke(errorMsg);
+        throw new TimeoutException(errorMsg);
+    }
+    catch (HttpRequestException ex)
+    {
+        var errorMsg = $"Network error: {ex.Message}";
+        Debug.LogError($"[YanHttp] {errorMsg}");
+        OnNetworkError?.Invoke(errorMsg);
+        throw;
+    }
+    catch (UnauthorizedAccessException)
+    {
+        throw; // Already logged and event emitted
+    }
+    catch (InvalidOperationException)
+    {
+        throw; // Already logged and event emitted
+    }
+    catch (Exception ex)
+    {
+        var errorMsg = $"Request failed: {ex.Message}";
+        Debug.LogError($"[YanHttp] {errorMsg}");
+        OnNetworkError?.Invoke(errorMsg);
+        throw;
+    }
+    finally
+    {
+        response?.Dispose();
+    }
+}
     }
 }

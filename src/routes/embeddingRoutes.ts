@@ -1,3 +1,5 @@
+// src/routes/embeddingRoutes.ts
+
 import { Router, Request, Response, NextFunction } from 'express';
 import { authMiddleware } from '../middleware/authMiddleware';
 import { creditsMiddleware, consumeCredits } from '../middleware/creditsMiddleware';
@@ -49,30 +51,24 @@ router.post(
 
             console.log(`[Embeddings] Generating ${items.length} embeddings for user ${req.user?.uid}`);
 
-            const embeddedItems = await Promise.all(
-                items.map(async (item, index) => {
-                    try {
-                        const trimmedText = item.text.trim();
-                        const embedding = await embeddingAdapter.generateEmbedding(trimmedText);
+            // Batch into ONE OpenAI embeddings request (adapter enforces per-item + per-request limits)
+            const texts = items.map((i) => i.text);
+            const embeddings = await embeddingAdapter.generateEmbeddings(texts);
 
-                        console.log(`[Embeddings] ✓ item[${index}] ${trimmedText.length} chars, ${embedding.length}D`);
+            const embeddedItems = items.map((item, index) => {
+                const trimmedText = item.text.trim();
+                const embedding = embeddings[index];
 
-                        return {
-                            id: item.id,
-                            filename: item.filename,
-                            embedding,
-                            dimensions: embeddingAdapter.getDimensions(),
-                            characterCount: trimmedText.length
-                        };
-                    } catch (error: any) {
-                        console.error(`[Embeddings] ✗ item[${index}]: ${error.message}`);
-                        throw AppError.validationError(
-                            `Failed to embed item[${index}]: ${error.message}`,
-                            ['items']
-                        );
-                    }
-                })
-            );
+                console.log(`[Embeddings] ✓ item[${index}] ${trimmedText.length} chars, ${embedding.length}D`);
+
+                return {
+                    id: item.id,
+                    filename: item.filename,
+                    embedding,
+                    dimensions: embeddingAdapter.getDimensions(),
+                    characterCount: trimmedText.length
+                };
+            });
 
             // Consume credits after successful operation
             await consumeCredits(req);

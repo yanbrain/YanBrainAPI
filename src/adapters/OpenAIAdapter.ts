@@ -8,17 +8,14 @@ export class OpenAIAdapter implements ILLMProvider {
     private client: OpenAI;
     private model: string = 'gpt-4o-mini';
 
-    private readonly DEFAULT_SYSTEM_PROMPT =
-        'You are a helpful AI assistant for YanBrain applications.';
+    private readonly DEFAULT_SYSTEM_PROMPT = 'You are a helpful AI assistant.';
 
-    // gpt-4o-mini: max combined input + output context ~128k tokens (~450k–500k characters)
-
-    // ===== INPUT LIMIT =====
+    // Input limits
     private readonly MAX_INPUT_CHARACTERS = 50_000;
 
-    // ===== OUTPUT LIMITS =====
-    private readonly MAX_ALLOWED_USER_OUTPUT_CHARACTERS = 300; // hard cap for user
-    private readonly HARD_LIMIT_BUFFER_CHARACTERS = 100;       // safety margin
+    // Output limits
+    private readonly MAX_ALLOWED_USER_OUTPUT_CHARACTERS = 300;
+    private readonly HARD_LIMIT_BUFFER_CHARACTERS = 100;
 
     constructor() {
         this.client = new OpenAI({
@@ -37,6 +34,7 @@ export class OpenAIAdapter implements ILLMProvider {
         }
     ): Promise<string> {
         try {
+            // Validate user prompt
             if (!userPrompt || !userPrompt.trim()) {
                 throw AppError.validationError(
                     'User prompt cannot be empty',
@@ -44,13 +42,8 @@ export class OpenAIAdapter implements ILLMProvider {
                 );
             }
 
-            const systemPrompt =
-                options?.systemPrompt || this.DEFAULT_SYSTEM_PROMPT;
-
-            const ragContext = options?.ragContext?.trim();
+            // Validate character limit if provided
             const requestedChars = options?.maxResponseChars;
-
-            // ===== VALIDATE USER-REQUESTED OUTPUT SIZE =====
             if (
                 requestedChars !== undefined &&
                 requestedChars > this.MAX_ALLOWED_USER_OUTPUT_CHARACTERS
@@ -61,16 +54,21 @@ export class OpenAIAdapter implements ILLMProvider {
                 );
             }
 
-            const targetOutputChars = requestedChars;
+            // Build system prompt
+            let systemPrompt = options?.systemPrompt || this.DEFAULT_SYSTEM_PROMPT;
 
-            const finalPrompt = ragContext
+            if (requestedChars) {
+                systemPrompt += `\n\nIMPORTANT: Keep your response under ${requestedChars} characters. This is a strict requirement.`;
+            }
+
+            // Build user prompt (with or without RAG context)
+            const ragContext = options?.ragContext?.trim();
+            const userMessage = ragContext
                 ? this.buildRAGPrompt(userPrompt, ragContext)
                 : userPrompt;
 
-            // ===== VALIDATE INPUT SIZE =====
-            const totalInputLength =
-                systemPrompt.length + finalPrompt.length;
-
+            // Validate total input size
+            const totalInputLength = systemPrompt.length + userMessage.length;
             if (totalInputLength > this.MAX_INPUT_CHARACTERS) {
                 throw AppError.validationError(
                     `Input exceeds maximum allowed size of ${this.MAX_INPUT_CHARACTERS} characters`,
@@ -78,27 +76,22 @@ export class OpenAIAdapter implements ILLMProvider {
                 );
             }
 
-            let finalSystemPrompt = systemPrompt;
-
-            if (targetOutputChars) {
-                finalSystemPrompt +=
-                    `\n\nIMPORTANT: Keep the response under ${targetOutputChars} characters. ` +
-                    `This is a strict requirement.`;
-            }
-
+            // Prepare messages
             const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
-                { role: 'system', content: finalSystemPrompt },
-                { role: 'user', content: finalPrompt }
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: userMessage }
             ];
 
-            const hardLimitChars = targetOutputChars
-                ? targetOutputChars + this.HARD_LIMIT_BUFFER_CHARACTERS
+            // Calculate token limit if character limit specified
+            const hardLimitChars = requestedChars
+                ? requestedChars + this.HARD_LIMIT_BUFFER_CHARACTERS
                 : undefined;
 
             const maxCompletionTokens = hardLimitChars
                 ? this.estimateTokens(hardLimitChars)
                 : undefined;
 
+            // Call OpenAI
             const response = await this.client.chat.completions.create({
                 model: this.model,
                 messages,
@@ -108,6 +101,7 @@ export class OpenAIAdapter implements ILLMProvider {
                 })
             });
 
+            // Extract and validate response
             let content = response.choices[0]?.message?.content;
 
             if (typeof content !== 'string' || !content.trim()) {
@@ -119,9 +113,9 @@ export class OpenAIAdapter implements ILLMProvider {
 
             content = content.trim();
 
-            // ===== FINAL HARD ENFORCEMENT =====
-            if (targetOutputChars && content.length > targetOutputChars) {
-                content = content.slice(0, targetOutputChars).trimEnd();
+            // Enforce character limit if specified
+            if (requestedChars && content.length > requestedChars) {
+                content = content.slice(0, requestedChars).trimEnd();
             }
 
             return content;
@@ -133,8 +127,10 @@ export class OpenAIAdapter implements ILLMProvider {
                 status: error.status
             });
 
+            // Re-throw AppErrors as-is
             if (error instanceof AppError) throw error;
 
+            // Handle specific OpenAI errors
             if (error.code === 'insufficient_quota') {
                 throw AppError.quotaExceededError(
                     'openai',
@@ -157,6 +153,7 @@ export class OpenAIAdapter implements ILLMProvider {
                 );
             }
 
+            // Generic error fallback
             throw AppError.providerError(
                 'openai',
                 error.message || 'OpenAI request failed',
@@ -165,21 +162,30 @@ export class OpenAIAdapter implements ILLMProvider {
         }
     }
 
-    private estimateTokens(characters: number): number {
-        // Conservative approximation: ~4 characters per token
-        return Math.ceil(characters / 4);
+    private buildRAGPrompt(userPrompt: string, ragContext: string): string {
+        return `You are a helpful technical assistant.
+
+## Voice Input Handling
+The question is from voice transcription and may contain errors. If technical terms in the context sound similar to words in the question, treat them as matches.
+
+## Response Format
+- Write in clear, natural paragraphs
+- Never use bullet points or numbered lists
+- Answer directly with no preamble
+- Do not mention misspellings, transcription errors, or term differences
+
+## Context
+${ragContext}
+
+## Question
+${userPrompt}
+
+## Answer`;
     }
 
-    private buildRAGPrompt(userPrompt: string, ragContext: string): string {
-        return `Context from documents:
----
-${ragContext}
----
-
-Based on the context above, answer the following question.
-If the answer is not in the context, say so clearly.
-
-Question: ${userPrompt}`;
+    private estimateTokens(characters: number): number {
+        // Rough estimate: ~4 characters per token
+        return Math.ceil(characters / 4);
     }
 
     getModelInfo(): ModelInfo {

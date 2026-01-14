@@ -1,4 +1,21 @@
 {
   "name": "YanBrainAPI",
-  "references":[ "InitArgs.Services", "YLogger", "InitArgs"]
+  "references": [
+    "InitArgs.Services",
+    "YLogger",
+    "InitArgs",
+    "Unity.Burst",
+    "Unity.Collections",
+    "Unity.Jobs",
+    "Unity.Mathematics"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
 }
