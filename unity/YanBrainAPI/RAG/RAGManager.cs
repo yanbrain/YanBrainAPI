@@ -29,7 +29,12 @@ namespace YanBrainAPI.RAG
         public string userQuestion;
 
         [Space(5)]
+        [Tooltip("Replaces the default system prompt (optional)")]
         public string systemPrompt;
+
+        [Tooltip("Appends to system prompt (optional)")]
+        public string additionalInstructions;
+
         public string voiceId;
 
         [Space(5)]
@@ -121,7 +126,8 @@ namespace YanBrainAPI.RAG
                 var payload = await _api.RagTextAsync(
                     userQuestion, 
                     ragContext, 
-                    systemPrompt, 
+                    systemPrompt,
+                    additionalInstructions,
                     maxResponseChars, 
                     _cts.Token
                 );
@@ -147,96 +153,97 @@ namespace YanBrainAPI.RAG
             }
         }
 
-       [Button("Ask Question (Audio)", ButtonSizes.Large)]
-[GUIColor(0.3f, 0.6f, 0.9f)]
-[PropertyOrder(2)]
-[DisableIf(nameof(_isProcessing))]
-private async void AskQuestionAudio()
-{
-    if (!ValidateBeforeQuery()) return;
-
-    _cts?.Cancel();
-    _cts = new CancellationTokenSource();
-
-    _isProcessing = true;
-    _lastLLMResponse = null;
-    _lastAudioData = null;
-
-    try
-    {
-        _statusMessage = "Querying documents...";
-        
-        var searcher = _indexManager.GetSearcher();
-        var relevantDocs = await searcher.QueryAsync(userQuestion);
-
-        Log($"[RAGManager] Query returned {relevantDocs?.Count ?? 0} documents");
-
-        _cts.Token.ThrowIfCancellationRequested();
-
-        if (relevantDocs == null || relevantDocs.Count == 0)
+        [Button("Ask Question (Audio)", ButtonSizes.Large)]
+        [GUIColor(0.3f, 0.6f, 0.9f)]
+        [PropertyOrder(2)]
+        [DisableIf(nameof(_isProcessing))]
+        private async void AskQuestionAudio()
         {
-            LogError("[RAGManager] No relevant documents found");
-            _statusMessage = "⚠ No relevant documents";
-            return;
+            if (!ValidateBeforeQuery()) return;
+
+            _cts?.Cancel();
+            _cts = new CancellationTokenSource();
+
+            _isProcessing = true;
+            _lastLLMResponse = null;
+            _lastAudioData = null;
+
+            try
+            {
+                _statusMessage = "Querying documents...";
+                
+                var searcher = _indexManager.GetSearcher();
+                var relevantDocs = await searcher.QueryAsync(userQuestion);
+
+                Log($"[RAGManager] Query returned {relevantDocs?.Count ?? 0} documents");
+
+                _cts.Token.ThrowIfCancellationRequested();
+
+                if (relevantDocs == null || relevantDocs.Count == 0)
+                {
+                    LogError("[RAGManager] No relevant documents found");
+                    _statusMessage = "⚠ No relevant documents";
+                    return;
+                }
+
+                _statusMessage = "Merging context...";
+                var ragContext = string.Join("\n\n---\n\n", relevantDocs.Select(d => d.Text));
+
+                Log($"[RAGManager] Context length: {ragContext?.Length ?? 0} chars");
+                Log($"[RAGManager] Context preview: {ragContext?.Substring(0, Math.Min(100, ragContext.Length))}...");
+
+                if (string.IsNullOrWhiteSpace(ragContext))
+                {
+                    LogError("[RAGManager] Context is empty after merging");
+                    _statusMessage = "⚠ Empty context";
+                    return;
+                }
+
+                _statusMessage = "Calling RAG Audio (LLM + TTS)...";
+                
+                Log($"[RAGManager] Calling RagAudioAsync with:");
+                Log($"  - userPrompt: {userQuestion?.Length ?? 0} chars");
+                Log($"  - ragContext: {ragContext?.Length ?? 0} chars");
+                Log($"  - systemPrompt: {systemPrompt?.Length ?? 0} chars");
+                Log($"  - additionalInstructions: {additionalInstructions?.Length ?? 0} chars");
+                Log($"  - voiceId: '{voiceId}'");
+                Log($"  - maxResponseChars: {maxResponseChars}");
+
+                var payload = await _api.RagAudioAsync(
+                    userQuestion,
+                    ragContext,
+                    systemPrompt,
+                    additionalInstructions,
+                    voiceId,
+                    maxResponseChars,
+                    _cts.Token
+                );
+
+                _statusMessage = "Decoding audio...";
+                _lastAudioData = Convert.FromBase64String(payload.AudioBase64);
+                _lastLLMResponse = payload.TextResponse;
+
+                _statusMessage = "✓ Complete - Ready to play";
+
+                Log($"[RAGManager] Answer: {_lastLLMResponse}");
+                Log($"[RAGManager] Audio ready: {_lastAudioData.Length} bytes");
+            }
+            catch (OperationCanceledException)
+            {
+                _statusMessage = "Cancelled";
+                LogWarning("[RAGManager] Question cancelled");
+            }
+            catch (Exception ex)
+            {
+                _statusMessage = $"Error: {ex.Message}";
+                LogError($"[RAGManager] Failed: {ex.Message}");
+                LogError($"[RAGManager] Stack trace: {ex.StackTrace}");
+            }
+            finally
+            {
+                _isProcessing = false;
+            }
         }
-
-        _statusMessage = "Merging context...";
-        var ragContext = string.Join("\n\n---\n\n", relevantDocs.Select(d => d.Text));
-
-        Log($"[RAGManager] Context length: {ragContext?.Length ?? 0} chars");
-        Log($"[RAGManager] Context preview: {ragContext?.Substring(0, Math.Min(100, ragContext.Length))}...");
-
-        if (string.IsNullOrWhiteSpace(ragContext))
-        {
-            LogError("[RAGManager] Context is empty after merging");
-            _statusMessage = "⚠ Empty context";
-            return;
-        }
-
-        _statusMessage = "Calling RAG Audio (LLM + TTS)...";
-        
-        Log($"[RAGManager] Calling RagAudioAsync with:");
-        Log($"  - userPrompt: {userQuestion?.Length ?? 0} chars");
-        Log($"  - ragContext: {ragContext?.Length ?? 0} chars");
-        Log($"  - systemPrompt: {systemPrompt?.Length ?? 0} chars");
-        Log($"  - voiceId: '{voiceId}'");
-        Log($"  - maxResponseChars: {maxResponseChars}");
-
-        var payload = await _api.RagAudioAsync(
-            userQuestion,
-            ragContext,
-            systemPrompt,
-            voiceId,
-            maxResponseChars,
-            _cts.Token
-        );
-
-        _statusMessage = "Decoding audio...";
-        _lastAudioData = Convert.FromBase64String(payload.AudioBase64);
-        _lastLLMResponse = payload.TextResponse;
-
-        _statusMessage = "✓ Complete - Ready to play";
-
-        Log($"[RAGManager] Answer: {_lastLLMResponse}");
-        Log($"[RAGManager] Audio ready: {_lastAudioData.Length} bytes");
-    }
-    catch (OperationCanceledException)
-    {
-        _statusMessage = "Cancelled";
-        LogWarning("[RAGManager] Question cancelled");
-    }
-    catch (Exception ex)
-    {
-        _statusMessage = $"Error: {ex.Message}";
-        LogError($"[RAGManager] Failed: {ex.Message}");
-        LogError($"[RAGManager] Stack trace: {ex.StackTrace}");
-    }
-    finally
-    {
-        _isProcessing = false;
-    }
-}
-
 
         [Button("Play Audio", ButtonSizes.Large)]
         [GUIColor(0.9f, 0.6f, 0.3f)]

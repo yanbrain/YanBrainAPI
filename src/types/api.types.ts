@@ -78,6 +78,7 @@ export interface RagTextRequest {
     userPrompt: string;
     ragContext: string;
     systemPrompt?: string;
+    additionalInstructions?: string;
     maxResponseChars?: number;
 }
 
@@ -90,6 +91,7 @@ export interface RagAudioRequest {
     userPrompt: string;
     ragContext: string;
     systemPrompt?: string;
+    additionalInstructions?: string;
     voiceId?: string;
     maxResponseChars?: number;
 }

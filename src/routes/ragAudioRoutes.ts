@@ -22,7 +22,7 @@ router.post(
         next: NextFunction
     ) => {
         try {
-            const { userPrompt, ragContext, systemPrompt, voiceId, maxResponseChars } = req.body;
+            const { userPrompt, ragContext, systemPrompt, additionalInstructions, voiceId, maxResponseChars } = req.body;
 
             if (typeof userPrompt !== 'string' || userPrompt.trim().length === 0) {
                 throw AppError.validationError('userPrompt is required', ['userPrompt']);
@@ -32,12 +32,11 @@ router.post(
                 throw AppError.validationError('ragContext is required', ['ragContext']);
             }
 
-            const defaultSystemPrompt = 'You are a helpful AI assistant that answers questions based on provided context.';
-
             const textResponse = await llmAdapter.generateResponse(
                 userPrompt,
                 {
-                    systemPrompt: systemPrompt || defaultSystemPrompt,
+                    systemPrompt: systemPrompt,
+                    additionalInstructions: additionalInstructions,
                     ragContext: ragContext,
                     maxResponseChars: maxResponseChars || 300
                 }

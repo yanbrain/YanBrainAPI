@@ -5,6 +5,7 @@ export interface ILLMProvider {
         userPrompt: string,
         options?: {
             systemPrompt?: string;
+            additionalInstructions?: string;
             ragContext?: string;
             maxResponseChars?: number;
         }

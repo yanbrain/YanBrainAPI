@@ -1,4 +1,4 @@
-// YanBrainAPI/YanBrainApi.cs - ADD EVENTS
+// YanBrainAPI/YanBrainApi.cs - UPDATE
 
 using System;
 using System.Collections.Generic;
@@ -47,6 +47,7 @@ namespace YanBrainAPI
         public async Task<LlmPayload> LlmAsync(
             string prompt,
             string systemPrompt = null,
+            string additionalInstructions = null,
             string ragContext = null,
             CancellationToken ct = default)
         {
@@ -54,6 +55,7 @@ namespace YanBrainAPI
             {
                 Prompt = prompt,
                 SystemPrompt = systemPrompt,
+                AdditionalInstructions = additionalInstructions,
                 RagContext = ragContext
             };
             var res = await _http.PostJsonAsync<ApiResponse<LlmPayload>>("/api/llm", req, authRequired: true, ct);
@@ -92,6 +94,7 @@ namespace YanBrainAPI
             string userPrompt,
             string ragContext,
             string systemPrompt = null,
+            string additionalInstructions = null,
             int? maxResponseChars = null,
             CancellationToken ct = default)
         {
@@ -100,6 +103,7 @@ namespace YanBrainAPI
                 UserPrompt = userPrompt,
                 RagContext = ragContext,
                 SystemPrompt = systemPrompt,
+                AdditionalInstructions = additionalInstructions,
                 MaxResponseChars = maxResponseChars
             };
             var res = await _http.PostJsonAsync<ApiResponse<RagTextPayload>>("/api/rag/text", req, authRequired: true, ct);
@@ -110,6 +114,7 @@ namespace YanBrainAPI
             string userPrompt,
             string ragContext,
             string systemPrompt = null,
+            string additionalInstructions = null,
             string voiceId = null,
             int? maxResponseChars = null,
             CancellationToken ct = default)
@@ -119,6 +124,7 @@ namespace YanBrainAPI
                 UserPrompt = userPrompt,
                 RagContext = ragContext,
                 SystemPrompt = systemPrompt,
+                AdditionalInstructions = additionalInstructions,
                 VoiceId = voiceId,
                 MaxResponseChars = maxResponseChars
             };

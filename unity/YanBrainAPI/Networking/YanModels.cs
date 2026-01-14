@@ -34,6 +34,9 @@ namespace YanBrainAPI.Networking
         [JsonProperty("systemPrompt", NullValueHandling = NullValueHandling.Ignore)]
         public string SystemPrompt { get; set; }
 
+        [JsonProperty("additionalInstructions", NullValueHandling = NullValueHandling.Ignore)]
+        public string AdditionalInstructions { get; set; }
+
         [JsonProperty("ragContext", NullValueHandling = NullValueHandling.Ignore)]
         public string RagContext { get; set; }
     }
@@ -149,6 +152,9 @@ namespace YanBrainAPI.Networking
         [JsonProperty("systemPrompt", NullValueHandling = NullValueHandling.Ignore)]
         public string SystemPrompt { get; set; }
 
+        [JsonProperty("additionalInstructions", NullValueHandling = NullValueHandling.Ignore)]
+        public string AdditionalInstructions { get; set; }
+
         [JsonProperty("maxResponseChars", NullValueHandling = NullValueHandling.Ignore)]
         public int? MaxResponseChars { get; set; }
     }
@@ -166,6 +172,9 @@ namespace YanBrainAPI.Networking
 
         [JsonProperty("systemPrompt", NullValueHandling = NullValueHandling.Ignore)]
         public string SystemPrompt { get; set; }
+
+        [JsonProperty("additionalInstructions", NullValueHandling = NullValueHandling.Ignore)]
+        public string AdditionalInstructions { get; set; }
 
         [JsonProperty("voiceId", NullValueHandling = NullValueHandling.Ignore)]
         public string VoiceId { get; set; }

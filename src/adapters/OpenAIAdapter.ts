@@ -8,7 +8,16 @@ export class OpenAIAdapter implements ILLMProvider {
     private client: OpenAI;
     private model: string = 'gpt-4o-mini';
 
-    private readonly DEFAULT_SYSTEM_PROMPT = 'You are a helpful AI assistant.';
+    private readonly DEFAULT_RAG_SYSTEM_PROMPT = `You are a helpful technical assistant.
+
+## Voice Input Handling
+The question is from voice transcription and may contain errors. If technical terms in the context sound similar to words in the question, treat them as matches.
+
+## Response Format
+- Write in clear, natural paragraphs
+- Never use bullet points or numbered lists
+- Answer directly with no preamble
+- Do not mention misspellings, transcription errors, or term differences`;
 
     // Input limits
     private readonly MAX_INPUT_CHARACTERS = 50_000;
@@ -29,6 +38,7 @@ export class OpenAIAdapter implements ILLMProvider {
         userPrompt: string,
         options?: {
             systemPrompt?: string;
+            additionalInstructions?: string;
             ragContext?: string;
             maxResponseChars?: number;
         }
@@ -39,6 +49,14 @@ export class OpenAIAdapter implements ILLMProvider {
                 throw AppError.validationError(
                     'User prompt cannot be empty',
                     ['userPrompt']
+                );
+            }
+
+            // Validate RAG context is provided
+            if (!options?.ragContext || !options.ragContext.trim()) {
+                throw AppError.validationError(
+                    'RAG context is required',
+                    ['ragContext']
                 );
             }
 
@@ -54,18 +72,21 @@ export class OpenAIAdapter implements ILLMProvider {
                 );
             }
 
-            // Build system prompt
-            let systemPrompt = options?.systemPrompt || this.DEFAULT_SYSTEM_PROMPT;
+            // Build system prompt: (custom OR default RAG) + additionalInstructions + char limit
+            let systemPrompt = options?.systemPrompt || this.DEFAULT_RAG_SYSTEM_PROMPT;
 
+            // Append additional instructions if provided
+            if (options?.additionalInstructions?.trim()) {
+                systemPrompt += '\n\n' + options.additionalInstructions.trim();
+            }
+
+            // Append character limit instruction if specified
             if (requestedChars) {
                 systemPrompt += `\n\nIMPORTANT: Keep your response under ${requestedChars} characters. This is a strict requirement.`;
             }
 
-            // Build user prompt (with or without RAG context)
-            const ragContext = options?.ragContext?.trim();
-            const userMessage = ragContext
-                ? this.buildRAGPrompt(userPrompt, ragContext)
-                : userPrompt;
+            // Build user message: just context + question
+            const userMessage = this.buildRAGUserMessage(userPrompt, options.ragContext);
 
             // Validate total input size
             const totalInputLength = systemPrompt.length + userMessage.length;
@@ -162,25 +183,16 @@ export class OpenAIAdapter implements ILLMProvider {
         }
     }
 
-    private buildRAGPrompt(userPrompt: string, ragContext: string): string {
-        return `You are a helpful technical assistant.
-
-## Voice Input Handling
-The question is from voice transcription and may contain errors. If technical terms in the context sound similar to words in the question, treat them as matches.
-
-## Response Format
-- Write in clear, natural paragraphs
-- Never use bullet points or numbered lists
-- Answer directly with no preamble
-- Do not mention misspellings, transcription errors, or term differences
-
-## Context
+    /**
+     * Builds the user message for RAG
+     * Contains ONLY the context and question - no instructions
+     */
+    private buildRAGUserMessage(userPrompt: string, ragContext: string): string {
+        return `## Context
 ${ragContext}
 
 ## Question
-${userPrompt}
-
-## Answer`;
+${userPrompt}`;
     }
 
     private estimateTokens(characters: number): number {
