@@ -17,7 +17,9 @@ The question is from voice transcription and may contain errors. If technical te
 - Write in clear, natural paragraphs
 - Never use bullet points or numbered lists
 - Answer directly with no preamble
-- Do not mention misspellings, transcription errors, or term differences`;
+- Do not mention misspellings, transcription errors, or term differences
+- Provide answers without suggesting the user look elsewhere for more information, avoid saying for more detials visit here, or likely refers to this.
+`;
 
     // Input limits
     private readonly MAX_INPUT_CHARACTERS = 50_000;
