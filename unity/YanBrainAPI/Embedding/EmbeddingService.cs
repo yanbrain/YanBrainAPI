@@ -1,32 +1,26 @@
-// File: Assets/Scripts/YanBrainAPI/Embedding/EmbeddingService.cs
-
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using YanBrain.YLogger;
 using YanBrainAPI.Documents;
 using YanBrainAPI.Networking;
 using YanBrainAPI.RAG;
+using YanBrainAPI.RAG.Data;
 using YanBrainAPI.Utils;
-using YanPlay.YLogger;
-using static YanPlay.YLogger.YLog;
+using static YanBrain.YLogger.YLog;
 
 namespace YanBrainAPI.Embedding
 {
-    /// <summary>
-    /// Generates embeddings from converted documents with optimized batching and async I/O.
-    /// OPTIMIZATIONS:
-    /// 1. Async file writes (prevents Unity freezing)
-    /// 2. Intelligent batching (maximizes API efficiency)
-    /// 3. Progress throttling (prevents UI spam)
-    /// 4. File-order preservation (safe cancellation)
-    /// </summary>
     [EnableLogger]
     public sealed class EmbeddingService
     {
-        private readonly RAGContext _context;
+        private readonly YanBrainApi _api;
+        private readonly FileStorage _storage;
+        private readonly YanBrainApiConfig _config;
+        private readonly RAGConfig _ragConfig;
         private readonly DocumentReader _reader;
         private readonly DocumentChunker _chunker;
         private readonly DocumentPathMapper _paths;
@@ -40,22 +34,22 @@ namespace YanBrainAPI.Embedding
 
         public event Action<DocumentProgress> OnProgressChanged;
 
-        // ✅ OPTIMIZATION: Safer batch limits to prevent timeouts
-        private const int MAX_CHARS_PER_BATCH = 500_000; // 500K chars
-        private const int MAX_ITEMS_PER_BATCH = 1000; // 1K items
+        private const int MAX_CHARS_PER_BATCH = 500_000;
+        private const int MAX_ITEMS_PER_BATCH = 1000;
 
-        public EmbeddingService(RAGContext context)
+        public EmbeddingService(YanBrainApi api, FileStorage storage, YanBrainApiConfig config, RAGConfig ragConfig)
         {
-            _context = context ?? throw new ArgumentNullException(nameof(context));
+            _api = api ?? throw new ArgumentNullException(nameof(api));
+            _storage = storage ?? throw new ArgumentNullException(nameof(storage));
+            _config = config ?? throw new ArgumentNullException(nameof(config));
+            _ragConfig = ragConfig ?? throw new ArgumentNullException(nameof(ragConfig));
             _reader = new DocumentReader();
             _chunker = new DocumentChunker();
-            _paths = new DocumentPathMapper(_context.ApiConfig);
+            _paths = new DocumentPathMapper(_config);
 
             _progress = new DocumentProgressReporter(DocumentWorkStage.Embedding);
             _progress.OnChanged += p => OnProgressChanged?.Invoke(p);
         }
-
-        // ==================== Public State API ====================
 
         public DocumentProgress GetProgressSnapshot() => _progress.Snapshot();
 
@@ -97,7 +91,7 @@ namespace YanBrainAPI.Embedding
             _pauseGate.Set();
             _progress.SetCancelling();
 
-            try { ctsToCancel?.Cancel(); } catch { /* ignore */ }
+            try { ctsToCancel?.Cancel(); } catch { }
 
             LogWarning("[EmbeddingService] Cancel requested");
         }
@@ -108,11 +102,6 @@ namespace YanBrainAPI.Embedding
             _progress.Reset("Ready");
         }
 
-        // ==================== Embedding API ====================
-
-        /// <summary>
-        /// Generate embeddings for a single converted document with async file I/O
-        /// </summary>
         public async Task GenerateEmbeddingsAsync(string convertedRelativeTxtPath, CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(convertedRelativeTxtPath))
@@ -129,7 +118,7 @@ namespace YanBrainAPI.Embedding
                 return;
             }
 
-            if (!_context.Storage.NeedsReindex(convertedRel))
+            if (!_storage.NeedsReindex(convertedRel))
             {
                 Log($"[EmbeddingService] {convertedRel} up to date, skipping");
                 return;
@@ -150,8 +139,8 @@ namespace YanBrainAPI.Embedding
 
             var chunks = _chunker.Chunk(
                 text,
-                _context.RagConfig.ChunkSizeTokens,
-                _context.RagConfig.OverlapTokens
+                _ragConfig.ChunkSizeTokens,
+                _ragConfig.OverlapTokens
             );
 
             if (chunks.Count == 0)
@@ -170,17 +159,17 @@ namespace YanBrainAPI.Embedding
 
             await WaitIfPausedAsync(ct);
 
-            var embedded = await _context.Api.EmbeddingsAsync(items, ct);
+            var embedded = await _api.EmbeddingsAsync(items, ct);
 
             if (embedded.Items == null || embedded.Items.Count != chunks.Count)
                 throw new Exception($"Embedding count mismatch: {embedded?.Items?.Count ?? 0} vs {chunks.Count}");
 
-            var docEmbeddings = new DocumentEmbeddings
+            var docEmbeddings = new DocumentEmbeddingData
             {
                 Filename = convertedRel,
-                ChunkSizeTokens = _context.RagConfig.ChunkSizeTokens,
-                OverlapTokens = _context.RagConfig.OverlapTokens,
-                Chunks = embedded.Items.Select((item, i) => new RagChunk
+                ChunkSizeTokens = _ragConfig.ChunkSizeTokens,
+                OverlapTokens = _ragConfig.OverlapTokens,
+                Chunks = embedded.Items.Select((item, i) => new RAGChunkData
                 {
                     ChunkIndex = i,
                     Text = chunks[i],
@@ -188,16 +177,11 @@ namespace YanBrainAPI.Embedding
                 }).ToList()
             };
 
-            // ✅ CRITICAL FIX: Async file write (prevents Unity freezing)
-            await _context.Storage.SaveDocumentEmbeddingsAsync(docEmbeddings);
+            await _storage.SaveDocumentEmbeddingsAsync(docEmbeddings);
 
             Log($"[EmbeddingService] ✓ {convertedRel} embedded");
         }
 
-        /// <summary>
-        /// Generate embeddings for all converted documents with optimized batching.
-        /// OPTIMIZED: Intelligent batching + async I/O + progress throttling
-        /// </summary>
         public async Task GenerateAllEmbeddingsAsync(CancellationToken externalCt = default)
         {
             _pauseGate.Set();
@@ -208,7 +192,7 @@ namespace YanBrainAPI.Embedding
 
             try
             {
-                var convertedRoot = _context.ApiConfig.GetConvertedDocumentsPath();
+                var convertedRoot = _config.GetConvertedDocumentsPath();
                 if (!Directory.Exists(convertedRoot))
                 {
                     _progress.Start(0, $"ConvertedDocuments not found: {convertedRoot}");
@@ -217,7 +201,6 @@ namespace YanBrainAPI.Embedding
                     return;
                 }
 
-                // ✅ OPTIMIZATION: Use cached file enumeration
                 var files = DocumentFileEnumerator.EnumerateRelativeFiles(
                         convertedRoot,
                         abs =>
@@ -243,7 +226,6 @@ namespace YanBrainAPI.Embedding
 
                 Log($"[EmbeddingService] Generating embeddings for {files.Count} documents...");
 
-                // ===== PHASE 1: Prepare all documents and chunks IN ORDER =====
                 var allDocuments = new List<DocumentWithChunks>();
 
                 foreach (var convertedRel in files)
@@ -261,7 +243,7 @@ namespace YanBrainAPI.Embedding
                             continue;
                         }
 
-                        if (!_context.Storage.NeedsReindex(convertedRel))
+                        if (!_storage.NeedsReindex(convertedRel))
                         {
                             Log($"[EmbeddingService] {convertedRel} up to date, skipping");
                             continue;
@@ -282,8 +264,8 @@ namespace YanBrainAPI.Embedding
 
                         var chunks = _chunker.Chunk(
                             text,
-                            _context.RagConfig.ChunkSizeTokens,
-                            _context.RagConfig.OverlapTokens
+                            _ragConfig.ChunkSizeTokens,
+                            _ragConfig.OverlapTokens
                         );
 
                         if (chunks.Count == 0)
@@ -313,11 +295,9 @@ namespace YanBrainAPI.Embedding
                     return;
                 }
 
-                // ===== PHASE 2: Create file-ordered batches =====
                 var batches = CreateFileOrderedBatches(allDocuments);
                 Log($"[EmbeddingService] Created {batches.Count} file-ordered batches");
 
-                // ===== PHASE 3: Process batches with async I/O =====
                 int processedBatches = 0;
                 
                 foreach (var batch in batches)
@@ -329,7 +309,6 @@ namespace YanBrainAPI.Embedding
                     {
                         Log($"[EmbeddingService] Processing batch {++processedBatches}/{batches.Count}: {batch.Documents.Count} files, {batch.TotalChunks} chunks, {batch.TotalChars} chars");
 
-                        // Flatten all chunks in this batch
                         var batchItems = new List<EmbeddingItem>();
                         var itemToDocMap = new List<(string docPath, int chunkIndex)>();
 
@@ -347,15 +326,13 @@ namespace YanBrainAPI.Embedding
                             }
                         }
 
-                        // Single API call for entire batch
-                        var embedded = await _context.Api.EmbeddingsAsync(batchItems, ct);
+                        var embedded = await _api.EmbeddingsAsync(batchItems, ct);
 
                         if (embedded.Items == null || embedded.Items.Count != batchItems.Count)
                         {
                             throw new Exception($"Embedding count mismatch: {embedded?.Items?.Count ?? 0} vs {batchItems.Count}");
                         }
 
-                        // Map results back to documents
                         var docResults = new Dictionary<string, List<(int chunkIndex, string text, float[] embedding)>>();
 
                         for (int i = 0; i < embedded.Items.Count; i++)
@@ -374,7 +351,9 @@ namespace YanBrainAPI.Embedding
                             ));
                         }
 
-                        // ✅ CRITICAL FIX: Save documents with async I/O (prevents freezing)
+                        // Build all document embeddings for this batch
+                        var batchDocEmbeddings = new List<DocumentEmbeddingData>();
+
                         foreach (var doc in batch.Documents)
                         {
                             ct.ThrowIfCancellationRequested();
@@ -391,12 +370,12 @@ namespace YanBrainAPI.Embedding
 
                                 var chunks = docResults[doc.DocumentPath].OrderBy(c => c.chunkIndex).ToList();
 
-                                var docEmbeddings = new DocumentEmbeddings
+                                var docEmbeddings = new DocumentEmbeddingData
                                 {
                                     Filename = doc.DocumentPath,
-                                    ChunkSizeTokens = _context.RagConfig.ChunkSizeTokens,
-                                    OverlapTokens = _context.RagConfig.OverlapTokens,
-                                    Chunks = chunks.Select(c => new RagChunk
+                                    ChunkSizeTokens = _ragConfig.ChunkSizeTokens,
+                                    OverlapTokens = _ragConfig.OverlapTokens,
+                                    Chunks = chunks.Select(c => new RAGChunkData
                                     {
                                         ChunkIndex = c.chunkIndex,
                                         Text = c.text,
@@ -404,20 +383,25 @@ namespace YanBrainAPI.Embedding
                                     }).ToList()
                                 };
 
-                                // ✅ CRITICAL FIX: Async save (off main thread)
-                                await _context.Storage.SaveDocumentEmbeddingsAsync(docEmbeddings);
+                                batchDocEmbeddings.Add(docEmbeddings);
                                 _progress.MarkOk();
 
-                                Log($"[EmbeddingService] ✓ {doc.DocumentPath} saved ({chunks.Count} chunks)");
+                                Log($"[EmbeddingService] ✓ {doc.DocumentPath} prepared ({chunks.Count} chunks)");
                             }
                             catch (Exception ex)
                             {
                                 _progress.MarkFailed();
-                                LogError($"[EmbeddingService] Failed to save {doc.DocumentPath}: {ex.Message}");
+                                LogError($"[EmbeddingService] Failed to prepare {doc.DocumentPath}: {ex.Message}");
                             }
                         }
 
-                        // ✅ OPTIMIZATION: Flush progress updates after each batch
+                        // Save entire batch at once (optimization)
+                        if (batchDocEmbeddings.Count > 0)
+                        {
+                            await _storage.SaveDocumentEmbeddingsBatchAsync(batchDocEmbeddings);
+                            Log($"[EmbeddingService] ✓ Batch saved: {batchDocEmbeddings.Count} documents");
+                        }
+
                         _progress.FlushPending();
 
                         Log($"[EmbeddingService] ✓ Batch {processedBatches}/{batches.Count} complete");
@@ -450,7 +434,7 @@ namespace YanBrainAPI.Embedding
                 _pauseGate.Set();
 
                 try { _runCts?.Dispose(); }
-                catch { /* ignore */ }
+                catch { }
                 finally { _runCts = null; }
 
                 _progress.Stop();
@@ -459,7 +443,7 @@ namespace YanBrainAPI.Embedding
 
         public List<string> GetEmbeddedDocuments()
         {
-            return _context.Storage.GetEmbeddedDocuments();
+            return _storage.GetEmbeddedDocuments();
         }
 
         public void RemoveEmbeddings(string convertedRelativeTxtPath)
@@ -467,17 +451,15 @@ namespace YanBrainAPI.Embedding
             var rel = RelativePath.Normalize(convertedRelativeTxtPath);
             RelativePath.AssertSafe(rel, nameof(convertedRelativeTxtPath));
 
-            _context.Storage.RemoveDocument(rel);
+            _storage.RemoveDocument(rel);
             Log($"[EmbeddingService] Removed embeddings for {rel}");
         }
 
         public void ClearAllEmbeddings()
         {
-            _context.Storage.ClearAll();
+            _storage.ClearAll();
             Log("[EmbeddingService] All embeddings cleared");
         }
-
-        // ==================== Internals ====================
 
         private async Task WaitIfPausedAsync(CancellationToken ct)
         {
@@ -490,10 +472,6 @@ namespace YanBrainAPI.Embedding
             }
         }
 
-        /// <summary>
-        /// Creates batches that respect file order and API limits.
-        /// Each batch contains COMPLETE files only.
-        /// </summary>
         private List<DocumentBatch> CreateFileOrderedBatches(List<DocumentWithChunks> documents)
         {
             var batches = new List<DocumentBatch>();
@@ -515,7 +493,6 @@ namespace YanBrainAPI.Embedding
                         currentBatch = new DocumentBatch();
                     }
 
-                    // Edge case: single document exceeds limits
                     if (docChars > MAX_CHARS_PER_BATCH || docChunks > MAX_ITEMS_PER_BATCH)
                     {
                         LogWarning($"[EmbeddingService] Document {doc.DocumentPath} exceeds single batch limits ({docChunks} chunks, {docChars} chars)");
@@ -540,8 +517,6 @@ namespace YanBrainAPI.Embedding
 
             return batches;
         }
-
-        // ==================== Helper Classes ====================
 
         private class DocumentWithChunks
         {

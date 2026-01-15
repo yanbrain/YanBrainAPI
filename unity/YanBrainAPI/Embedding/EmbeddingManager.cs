@@ -1,31 +1,21 @@
-// File: Assets/Scripts/YanBrainAPI/Embedding/EmbeddingManager.cs
-
 using System;
 using System.Collections.Generic;
 using System.Threading;
 using Sirenix.OdinInspector;
 using Sisus.Init;
+using YanBrain.YLogger;
 using YanBrainAPI.Documents;
-using YanBrainAPI.Interfaces;
-using YanBrainAPI.Networking;
-using YanBrainAPI.RAG;
-using YanPlay.YLogger;
-using static YanPlay.YLogger.YLog;
+using static YanBrain.YLogger.YLog;
 
 namespace YanBrainAPI.Embedding
 {
     [EnableLogger]
-    public class EmbeddingManager : MonoBehaviour<YanBrainApiConfig, ITokenProvider>
+    public class EmbeddingManager : MonoBehaviour<YanBrainService>
     {
-        private YanBrainApiConfig _apiConfig;
-        private ITokenProvider _tokenProvider;
-
-        private RAGContext _context;
+        private YanBrainService _service;
         private EmbeddingService _embeddingService;
-
         private CancellationTokenSource _cts;
 
-        // ===== UI/Inspector status =====
         [Title("Embedding Progress")]
         [ShowInInspector, ReadOnly] private int Total => _uiProgress?.Total ?? 0;
         [ShowInInspector, ReadOnly] private int Done => _uiProgress?.Done ?? 0;
@@ -39,7 +29,6 @@ namespace YanBrainAPI.Embedding
         [ShowInInspector, ReadOnly] private bool IsRunning => _uiProgress?.IsRunning ?? false;
         [ShowInInspector, ReadOnly] private bool IsPaused => _uiProgress?.IsPaused ?? false;
 
-        // ✅ FIXED: Cached instead of property that calls expensive method every frame
         [Title("Embedded Documents")]
         [ShowInInspector, ReadOnly]
         private int _cachedEmbeddedCount = 0;
@@ -65,15 +54,25 @@ namespace YanBrainAPI.Embedding
 
         private DocumentProgress _uiProgress;
 
-        protected override void Init(YanBrainApiConfig apiConfig, ITokenProvider tokenProvider)
+        protected override void Init(YanBrainService service)
         {
-            _apiConfig = apiConfig;
-            _tokenProvider = tokenProvider;
+            _service = service;
         }
 
         private void Start()
         {
-            InitializeServices();
+            _embeddingService = new EmbeddingService(
+                _service.Api,
+                _service.Storage,
+                _service.Config,
+                _service.RagConfig
+            );
+            
+            _embeddingService.OnProgressChanged += HandleProgressChanged;
+            _uiProgress = _embeddingService.GetProgressSnapshot();
+
+            Log("[EmbeddingManager] Services initialized");
+            RefreshEmbeddedList();
         }
 
         private void OnDestroy()
@@ -83,29 +82,10 @@ namespace YanBrainAPI.Embedding
                 if (_embeddingService != null)
                     _embeddingService.OnProgressChanged -= HandleProgressChanged;
             }
-            catch { /* ignore */ }
+            catch { }
 
             _cts?.Cancel();
             _cts?.Dispose();
-        }
-
-        private void InitializeServices()
-        {
-            _apiConfig.EnsureFoldersExist();
-
-            var http = new YanHttp(_apiConfig.GetBaseUrl(), _apiConfig.TimeoutSeconds, _tokenProvider);
-            var api = new YanBrainApi(http);
-
-            _context = new RAGContext(api, _apiConfig);
-            _embeddingService = new EmbeddingService(_context);
-
-            _embeddingService.OnProgressChanged += HandleProgressChanged;
-            _uiProgress = _embeddingService.GetProgressSnapshot();
-
-            Log("[EmbeddingManager] Services initialized");
-            
-            // Initial refresh
-            RefreshEmbeddedList();
         }
 
         private void HandleProgressChanged(DocumentProgress p)
@@ -117,8 +97,6 @@ namespace YanBrainAPI.Embedding
                 Log($"[Embedding] Progress: {p.Done} / {p.Total} | OK: {p.Ok} | Failed: {p.Failed} | Now: {p.CurrentItem}");
             }
         }
-
-        // ==================== Controls ====================
 
         [Button("Generate Embeddings", ButtonSizes.Large)]
         [GUIColor(0.3f, 0.8f, 0.3f)]
@@ -141,7 +119,6 @@ namespace YanBrainAPI.Embedding
                 Log("[EmbeddingManager] Starting embedding generation...");
                 await _embeddingService.GenerateAllEmbeddingsAsync(_cts.Token);
                 
-                // ✅ Refresh list after completion
                 RefreshEmbeddedList();
                 
                 Log($"[EmbeddingManager] ✅ Done. Embedded docs: {_cachedEmbeddedCount}");
@@ -192,8 +169,6 @@ namespace YanBrainAPI.Embedding
         private bool CanPause() => IsRunning && !IsPaused;
         private bool CanResume() => IsRunning && IsPaused;
 
-        // ==================== Existing destructive ops ====================
-
         [Button("Clear Embeddings", ButtonSizes.Large)]
         [GUIColor(0.8f, 0.3f, 0.3f)]
         [DisableIf(nameof(IsRunning))]
@@ -209,7 +184,6 @@ namespace YanBrainAPI.Embedding
             _embeddingService.ClearAllEmbeddings();
             _embeddingService.ResetProgress();
             
-            // ✅ Refresh list after clearing
             RefreshEmbeddedList();
             
             Log("[EmbeddingManager] All embeddings cleared");

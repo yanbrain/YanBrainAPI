@@ -3,8 +3,8 @@ using System.IO;
 using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.Networking;
-using YanPlay.YLogger;
-using static YanPlay.YLogger.YLog;
+using YanBrain.YLogger;
+using static YanBrain.YLogger.YLog;
 
 namespace YanBrainAPI.Utils
 {

@@ -2,24 +2,24 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using Sisus.Init;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Jobs;
 using Unity.Mathematics;
+using YanBrain.YLogger;
 using YanBrainAPI.Networking;
-using YanPlay.YLogger;
-using static YanPlay.YLogger.YLog;
+using YanBrainAPI.RAG.Data;
+using static YanBrain.YLogger.YLog;
 
 namespace YanBrainAPI.RAG
 {
     [EnableLogger]
-    [Service(typeof(DocumentSearcher))]
     public sealed class DocumentSearcher : IDisposable
     {
-        private readonly RAGContext _context;
+        private readonly YanBrainApi _api;
+        private readonly FileStorage _storage;
+        private readonly RAGConfig _config;
         
-        // Native containers for Burst jobs
         private NativeArray<float> _embeddings;
         private NativeArray<ChunkMetadata> _metadata;
         private int _chunkCount;
@@ -27,7 +27,6 @@ namespace YanBrainAPI.RAG
         private bool _isIndexed;
         private bool _isDisposed;
 
-        // Managed lookup tables
         private List<string> _documentPaths;
         private List<string> _chunkTexts;
 
@@ -37,24 +36,20 @@ namespace YanBrainAPI.RAG
             public int ChunkIndex;
         }
 
-        public DocumentSearcher()
+        public DocumentSearcher(YanBrainApi api, FileStorage storage, RAGConfig config)
         {
-            _documentPaths = new List<string>();
-            _chunkTexts = new List<string>();
-        }
-        
-        public DocumentSearcher(RAGContext context)
-        {
-            _context = context ?? throw new ArgumentNullException(nameof(context));
+            _api = api ?? throw new ArgumentNullException(nameof(api));
+            _storage = storage ?? throw new ArgumentNullException(nameof(storage));
+            _config = config ?? throw new ArgumentNullException(nameof(config));
             _documentPaths = new List<string>();
             _chunkTexts = new List<string>();
         }
 
         public async Task BuildIndexAsync()
         {
-            Log("[DocumentSearcher] Building Burst-optimized index...");
+            Log("[DocumentSearcher] Building index...");
 
-            var embeddedDocs = _context.Storage.GetEmbeddedDocuments();
+            var embeddedDocs = _storage.GetEmbeddedDocuments();
             if (embeddedDocs.Count == 0)
             {
                 LogWarning("[DocumentSearcher] No embeddings found");
@@ -70,7 +65,7 @@ namespace YanBrainAPI.RAG
 
             foreach (var docRel in embeddedDocs)
             {
-                var docEmb = await _context.Storage.LoadDocumentEmbeddingsAsync(docRel);
+                var docEmb = await _storage.LoadDocumentEmbeddingsAsync(docRel);
                 if (docEmb?.Chunks == null) continue;
 
                 int docIndex = _documentPaths.Count;
@@ -84,7 +79,6 @@ namespace YanBrainAPI.RAG
                     float norm = CalculateNorm(emb);
                     if (norm > 1e-6f)
                     {
-                        // Add normalized embedding
                         for (int i = 0; i < _dimension; i++)
                             tempEmbeddings.Add(emb[i] / norm);
 
@@ -105,45 +99,40 @@ namespace YanBrainAPI.RAG
                 return;
             }
 
-            // Allocate persistent native memory
             _embeddings = new NativeArray<float>(tempEmbeddings.ToArray(), Allocator.Persistent);
             _metadata = new NativeArray<ChunkMetadata>(tempMetadata.ToArray(), Allocator.Persistent);
             _isIndexed = true;
 
-            Log($"[DocumentSearcher] ✅ Burst index built: {_chunkCount} chunks, {_dimension}D, {_documentPaths.Count} docs");
+            Log($"[DocumentSearcher] ✅ Index built: {_chunkCount} chunks, {_dimension}D, {_documentPaths.Count} docs");
         }
 
         public async Task<List<RelevantDocument>> QueryAsync(string userPrompt)
         {
             if (string.IsNullOrWhiteSpace(userPrompt))
                 throw new ArgumentException("User prompt required", nameof(userPrompt));
-            
+    
             if (!_isIndexed)
                 throw new InvalidOperationException("Index not built. Call BuildIndexAsync first.");
 
             Log($"[DocumentSearcher] Query: \"{userPrompt}\" ({_chunkCount} chunks)");
 
-            var queryItems = new List<EmbeddingItem> { new() { Id = "query", Text = userPrompt } };
-            var queryResult = await _context.Api.EmbeddingsAsync(queryItems);
-            var queryEmb = queryResult.Items[0].Embedding;
-
-            float qNorm = CalculateNorm(queryEmb);
-            if (qNorm <= 1e-6f)
-            {
-                LogWarning("[DocumentSearcher] Query vector has zero magnitude");
-                return new List<RelevantDocument>();
-            }
-
-            var queryVector = new NativeArray<float>(_dimension, Allocator.TempJob);
-            var scores = new NativeArray<float>(_chunkCount, Allocator.TempJob);
+            var queryVector = new NativeArray<float>(_dimension, Allocator.Persistent);
+            var scores = new NativeArray<float>(_chunkCount, Allocator.Persistent);
 
             try
             {
-                // Fill query vector
-                for (int i = 0; i < _dimension; i++)
-                    queryVector[i] = queryEmb[i] / qNorm;
+                var qEmb = await GetQueryEmbedding(userPrompt);
+                float qNorm = CalculateNorm(qEmb);
+        
+                if (qNorm <= 1e-6f)
+                {
+                    LogWarning("[DocumentSearcher] Query vector has zero magnitude");
+                    return new List<RelevantDocument>();
+                }
 
-                // Schedule job
+                for (int i = 0; i < _dimension; i++)
+                    queryVector[i] = qEmb[i] / qNorm;
+
                 var job = new SimilarityJob
                 {
                     QueryVector = queryVector,
@@ -154,11 +143,11 @@ namespace YanBrainAPI.RAG
 
                 int workerCount = math.max(1, Unity.Jobs.LowLevel.Unsafe.JobsUtility.JobWorkerCount);
                 int batchSize = math.max(1, _chunkCount / (workerCount * 4));
-                
+        
                 JobHandle handle = job.Schedule(_chunkCount, batchSize);
                 handle.Complete();
 
-                var topIndices = GetTopK(scores, _context.RagConfig.TopChunksStage2);
+                var topIndices = GetTopK(scores, _config.TopChunks);
                 var results = BuildResults(topIndices);
 
                 Log($"[DocumentSearcher] Found {results.Count} docs ({results.Sum(r => r.Text.Length)} chars)");
@@ -170,7 +159,7 @@ namespace YanBrainAPI.RAG
                 if (scores.IsCreated) scores.Dispose();
             }
         }
-
+        
         [BurstCompile(FloatPrecision.Standard, FloatMode.Fast)]
         private struct SimilarityJob : IJobParallelFor
         {
@@ -184,7 +173,6 @@ namespace YanBrainAPI.RAG
                 int offset = index * Dimension;
                 float sum = 0f;
 
-                // SIMD processing with float4
                 int vecCount = Dimension / 4;
                 for (int i = 0; i < vecCount; i++)
                 {
@@ -204,13 +192,19 @@ namespace YanBrainAPI.RAG
                     sum += math.dot(q, e);
                 }
 
-                // Process remaining elements
                 int remainder = Dimension % 4;
                 for (int i = Dimension - remainder; i < Dimension; i++)
                     sum += QueryVector[i] * Embeddings[offset + i];
 
                 Scores[index] = sum;
             }
+        }
+
+        private async Task<float[]> GetQueryEmbedding(string text)
+        {
+            var queryItems = new List<EmbeddingItem> { new() { Id = "query", Text = text } };
+            var queryResult = await _api.EmbeddingsAsync(queryItems);
+            return queryResult.Items[0].Embedding;
         }
 
         private List<int> GetTopK(NativeArray<float> scores, int k)
@@ -226,73 +220,52 @@ namespace YanBrainAPI.RAG
                 .ToList();
         }
 
-private List<RelevantDocument> BuildResults(List<int> topIndices)
-{
-    var docGroups = topIndices
-        .Select(i => _metadata[i])
-        .GroupBy(m => m.DocumentIndex)
-        .Take(_context.RagConfig.MaxDocs);
-
-    var results = new List<RelevantDocument>();
-    int totalChars = 0;
-    int maxChars = _context.RagConfig.MaxTotalChars;
-
-    foreach (var group in docGroups)
-    {
-        var chunkList = group.Select(m => new 
-        { 
-            Index = m.ChunkIndex, 
-            Text = _chunkTexts[m.ChunkIndex] 
-        }).ToList();
-
-        var chunks = chunkList.Select(c => c.Text);
-        string mergedText = string.Join("\n\n---\n\n", chunks);
-
-        if (totalChars + mergedText.Length > maxChars)
+        private List<RelevantDocument> BuildResults(List<int> topIndices)
         {
-            int remaining = maxChars - totalChars;
-            if (remaining > 500)
+            var docGroups = topIndices
+                .Select(i => _metadata[i])
+                .GroupBy(m => m.DocumentIndex)
+                .Take(_config.MaxDocs);
+
+            var results = new List<RelevantDocument>();
+            int totalChars = 0;
+            int maxChars = _config.MaxTotalChars;
+
+            foreach (var group in docGroups)
             {
+                var chunkList = group.Select(m => new 
+                { 
+                    Index = m.ChunkIndex, 
+                    Text = _chunkTexts[m.ChunkIndex] 
+                }).ToList();
+
+                var chunks = chunkList.Select(c => c.Text);
+                string mergedText = string.Join("\n\n---\n\n", chunks);
+
+                if (totalChars + mergedText.Length > maxChars)
+                {
+                    int remaining = maxChars - totalChars;
+                    if (remaining > 500)
+                    {
+                        results.Add(new RelevantDocument
+                        {
+                            Filename = _documentPaths[group.Key],
+                            Text = mergedText.Substring(0, remaining)
+                        });
+                    }
+                    break;
+                }
+
                 results.Add(new RelevantDocument
                 {
                     Filename = _documentPaths[group.Key],
-                    Text = mergedText.Substring(0, remaining)
+                    Text = mergedText
                 });
+                totalChars += mergedText.Length;
             }
-            break;
+
+            return results;
         }
-
-        results.Add(new RelevantDocument
-        {
-            Filename = _documentPaths[group.Key],
-            Text = mergedText
-        });
-        totalChars += mergedText.Length;
-    }
-
-    DebugPrintDocuments(topIndices);
-    return results;
-}
-
-private void DebugPrintDocuments(List<int> topIndices)
-{
-    var docGroups = topIndices
-        .Select(i => _metadata[i])
-        .GroupBy(m => m.DocumentIndex)
-        .Take(2);
-
-    foreach (var group in docGroups)
-    {
-        string documentPath = _documentPaths[group.Key];
-        Log($"[DocumentSearcher] 📄 Document: {documentPath}");
-        
-        var firstChunk = group.First();
-        string chunkText = _chunkTexts[firstChunk.ChunkIndex];
-        int previewLength = Math.Min(150, chunkText.Length);
-        string preview = chunkText.Substring(0, previewLength);
-        Log($"[DocumentSearcher]   Chunk 1 (Index {firstChunk.ChunkIndex}): {preview}...");
-    }
-}
 
         private static float CalculateNorm(float[] vector)
         {
@@ -368,9 +341,6 @@ private void DebugPrintDocuments(List<int> topIndices)
         public List<string> GetIndexedDocuments() => new List<string>(_documentPaths);
     }
 
-    /// <summary>
-    /// Serializable index data for disk persistence
-    /// </summary>
     [Serializable]
     public sealed class IndexData
     {

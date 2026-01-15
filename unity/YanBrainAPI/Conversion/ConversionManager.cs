@@ -1,4 +1,3 @@
-// File: Assets/Scripts/YanBrainAPI/Conversion/ConversionManager.cs
 
 using System;
 using System.Collections.Generic;
@@ -6,11 +5,11 @@ using System.Threading;
 using Sirenix.OdinInspector;
 using Sisus.Init;
 using UnityEngine;
+using YanBrain.YLogger;
 using YanBrainAPI.Documents;
 using YanBrainAPI.Interfaces;
 using YanBrainAPI.Networking;
-using YanPlay.YLogger;
-using static YanPlay.YLogger.YLog;
+using static YanBrain.YLogger.YLog;
 
 namespace YanBrainAPI.Conversion
 {

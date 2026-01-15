@@ -6,11 +6,11 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using YanBrain.YLogger;
 using YanBrainAPI.Documents;
 using YanBrainAPI.Networking;
 using YanBrainAPI.Utils;
-using YanPlay.YLogger;
-using static YanPlay.YLogger.YLog;
+using static YanBrain.YLogger.YLog;
 
 namespace YanBrainAPI.Conversion
 {

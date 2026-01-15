@@ -1,6 +1,3 @@
-// File: Assets/Scripts/YanBrainAPI/RAG/FileStorage.cs
-// SIMPLIFIED VERSION - Index removed (SharpVector handles it)
-
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -8,15 +5,13 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
+using YanBrain.YLogger;
+using YanBrainAPI.RAG.Data;
 using YanBrainAPI.Utils;
-using YanPlay.YLogger;
-using static YanPlay.YLogger.YLog;
+using static YanBrain.YLogger.YLog;
 
 namespace YanBrainAPI.RAG
 {
-    /// <summary>
-    /// Handles file I/O for embeddings only (index removed - SharpVector handles it)
-    /// </summary>
     [EnableLogger]
     public sealed class FileStorage
     {
@@ -32,9 +27,7 @@ namespace YanBrainAPI.RAG
             Directory.CreateDirectory(_embeddingsRoot);
         }
 
-        // ==================== Document Embeddings - ASYNC ONLY ====================
-
-        public async Task SaveDocumentEmbeddingsAsync(DocumentEmbeddings doc)
+        public async Task SaveDocumentEmbeddingsAsync(DocumentEmbeddingData doc)
         {
             if (doc == null || string.IsNullOrEmpty(doc.Filename))
                 throw new ArgumentException("Invalid document embeddings");
@@ -61,7 +54,7 @@ namespace YanBrainAPI.RAG
             });
         }
 
-        public async Task SaveDocumentEmbeddingsBatchAsync(List<DocumentEmbeddings> documents)
+        public async Task SaveDocumentEmbeddingsBatchAsync(List<DocumentEmbeddingData> documents)
         {
             if (documents == null || documents.Count == 0)
                 return;
@@ -79,7 +72,7 @@ namespace YanBrainAPI.RAG
             Log($"[FileStorage] Batch save complete: {documents.Count} files");
         }
 
-        public async Task<DocumentEmbeddings> LoadDocumentEmbeddingsAsync(string convertedRelativeTxtPath)
+        public async Task<DocumentEmbeddingData> LoadDocumentEmbeddingsAsync(string convertedRelativeTxtPath)
         {
             var rel = RelativePath.Normalize(convertedRelativeTxtPath);
             RelativePath.AssertSafe(rel, nameof(convertedRelativeTxtPath));
@@ -93,7 +86,7 @@ namespace YanBrainAPI.RAG
                 try
                 {
                     var json = File.ReadAllText(path, Encoding.UTF8);
-                    var doc = JsonConvert.DeserializeObject<DocumentEmbeddings>(json);
+                    var doc = JsonConvert.DeserializeObject<DocumentEmbeddingData>(json);
                     if (doc != null)
                         doc.Filename = RelativePath.Normalize(doc.Filename);
                     return doc;
@@ -104,11 +97,6 @@ namespace YanBrainAPI.RAG
                     return null;
                 }
             });
-        }
-
-        public DocumentEmbeddings LoadDocumentEmbeddings(string convertedRelativeTxtPath)
-        {
-            return LoadDocumentEmbeddingsAsync(convertedRelativeTxtPath).GetAwaiter().GetResult();
         }
 
         public bool NeedsReindex(string convertedRelativeTxtPath)
@@ -146,8 +134,6 @@ namespace YanBrainAPI.RAG
             if (File.Exists(path))
                 File.Delete(path);
         }
-
-        // ==================== Management ====================
 
         public List<string> GetEmbeddedDocuments()
         {

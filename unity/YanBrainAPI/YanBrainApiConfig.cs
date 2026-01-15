@@ -1,8 +1,8 @@
 using System.IO;
 using Sisus.Init;
 using UnityEngine;
-using YanPlay.YLogger;
-using static YanPlay.YLogger.YLog;
+using YanBrain.YLogger;
+using static YanBrain.YLogger.YLog;
 
 namespace YanBrainAPI
 {

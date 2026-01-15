@@ -1,53 +1,60 @@
 using System;
+using System.IO;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
+using Newtonsoft.Json;
 using Sirenix.OdinInspector;
 using Sisus.Init;
 using UnityEngine;
+using YanBrain.YLogger;
 using YanBrainAPI.Interfaces;
 using YanBrainAPI.Networking;
 using YanBrainAPI.Utils;
-using YanPlay.YLogger;
-using static YanPlay.YLogger.YLog;
+using static YanBrain.YLogger.YLog;
 
 namespace YanBrainAPI.RAG
 {
     [EnableLogger]
     [RequireComponent(typeof(AudioPlayer))]
-    public sealed class RAGManager : MonoBehaviour<YanBrainApiConfig, ITokenProvider, IndexManager>
+    public sealed class RAGManager : MonoBehaviour<YanBrainService, IRagAudioProvider>
     {
-        private YanBrainApiConfig _apiConfig;
-        private ITokenProvider _tokenProvider;
-        private IndexManager _indexManager;
-
-        private YanBrainApi _api;
+        private YanBrainService _service;
+        private IRagAudioProvider _provider;
+        private DocumentSearcher _searcher;
         private AudioPlayer _audioPlayer;
         private CancellationTokenSource _cts;
 
-        [Title("Input")]
+        #region Inspector - Testing
+        [Title("Testing")]
         [TextArea(3, 10)]
         public string userQuestion;
 
         [Space(5)]
-        [Tooltip("Replaces the default system prompt (optional)")]
         public string systemPrompt;
-
-        [Tooltip("Appends to system prompt (optional)")]
         public string additionalInstructions;
-
         public string voiceId;
 
-        [Space(5)]
         [Range(100, 1000)]
-        [Tooltip("Maximum character limit for LLM response (server enforces 300 max)")]
         public int maxResponseChars = 300;
+        #endregion
 
-        [Title("Status")]
+        #region Inspector - Status
+        [Title("Index Status")]
         [ShowInInspector, ReadOnly]
-        private bool IsIndexReady => _indexManager?.GetSearcher()?.IsIndexReady() ?? false;
+        private bool IsIndexBuilt => _searcher?.IsIndexReady() ?? false;
 
         [ShowInInspector, ReadOnly]
-        private int IndexedDocuments => _indexManager?.GetSearcher()?.GetIndexedDocuments()?.Count ?? 0;
+        private int IndexedChunks => _searcher?.GetIndexedCount() ?? 0;
+
+        [ShowInInspector, ReadOnly]
+        private int IndexedDocuments => _searcher?.GetIndexedDocuments()?.Count ?? 0;
+
+        [ShowInInspector, ReadOnly]
+        private string IndexMemorySize => CalculateIndexSize();
+
+        [ShowInInspector, ReadOnly]
+        private string IndexFileStatus => GetIndexFileStatus();
 
         [ShowInInspector, ReadOnly]
         private bool IsProcessing => _isProcessing;
@@ -61,44 +68,191 @@ namespace YanBrainAPI.RAG
 
         [ShowInInspector, ReadOnly]
         private string AudioDataSize => _lastAudioData != null ? $"{_lastAudioData.Length / 1024}KB" : "No audio";
+        #endregion
 
+        #region State
         private bool _isProcessing;
         private string _statusMessage = "Ready";
         private string _lastLLMResponse;
         private byte[] _lastAudioData;
+        private string IndexFilePath => Path.Combine(_service.Config.GetIndexPath(), "index");
+        #endregion
 
-        protected override void Init(YanBrainApiConfig apiConfig, ITokenProvider tokenProvider, IndexManager indexManager)
+        protected override void Init(YanBrainService service, IRagAudioProvider provider)
         {
-            _apiConfig = apiConfig;
-            _tokenProvider = tokenProvider;
-            _indexManager = indexManager;
+            _service = service;
+            _provider = provider;
         }
 
         protected override void OnAwake()
         {
-            InitializeServices();
+            _searcher = new DocumentSearcher(_service.Api, _service.Storage, _service.RagConfig);
+            _audioPlayer = GetComponent<AudioPlayer>();
+
+            Log("[RAGManager] Initialized");
+
+            if (File.Exists(IndexFilePath))
+            {
+                _ = AutoLoadIndexAsync();
+            }
         }
 
         private void OnDestroy()
         {
             _cts?.Cancel();
             _cts?.Dispose();
+            _searcher?.Dispose();
         }
 
-        private void InitializeServices()
+        #region Public API
+        public async Task<(RagAudioPayload payload, float ragTime, float serverTime)> QueryAsync(
+            string userPrompt,
+            string systemPrompt = null,
+            string additionalInstructions = null,
+            string voiceId = null,
+            int? maxResponseChars = null,
+            CancellationToken ct = default)
         {
-            _apiConfig.EnsureFoldersExist();
+            if (!IsIndexBuilt)
+            {
+                LogError("[RAGManager] Index not ready");
+                throw new InvalidOperationException("Index not ready. Build index first.");
+            }
 
-            var http = new YanHttp(_apiConfig.GetBaseUrl(), _apiConfig.TimeoutSeconds, _tokenProvider);
-            _api = new YanBrainApi(http);
-            _audioPlayer = GetComponent<AudioPlayer>();
+            var ragStart = Time.realtimeSinceStartup;
+            var relevantDocs = await _searcher.QueryAsync(userPrompt);
+            var docTexts = relevantDocs.Select(d => d.Text);
+            var ragContext = string.Join("\n\n---\n\n", docTexts);
+            var ragTime = Time.realtimeSinceStartup - ragStart;
 
-            Log("[RAGManager] Initialized");
+            var serverStart = Time.realtimeSinceStartup;
+            var payload = await _provider.GetRagAudioAsync(
+                userPrompt,
+                ragContext,
+                systemPrompt,
+                additionalInstructions,
+                voiceId,
+                maxResponseChars,
+                ct
+            );
+            var serverTime = Time.realtimeSinceStartup - serverStart;
+
+            return (payload, ragTime, serverTime);
         }
 
-        [Button("Ask Question (Text)", ButtonSizes.Large)]
+        public bool IsReady() => IsIndexBuilt;
+
+        public async Task BuildIndexAsync()
+        {
+            await _searcher.BuildIndexAsync();
+        }
+
+        public async Task SaveIndexAsync()
+        {
+            if (!IsIndexBuilt) return;
+
+            var indexData = _searcher.ExportIndexData();
+            var json = JsonConvert.SerializeObject(indexData, Formatting.None);
+
+            await Task.Run(() =>
+            {
+                Directory.CreateDirectory(_service.Config.GetIndexPath());
+                File.WriteAllText(IndexFilePath, json, System.Text.Encoding.UTF8);
+            });
+        }
+
+        public async Task LoadIndexAsync()
+        {
+            if (!File.Exists(IndexFilePath)) return;
+
+            string json = await Task.Run(() => File.ReadAllText(IndexFilePath, System.Text.Encoding.UTF8));
+            var indexData = JsonConvert.DeserializeObject<IndexData>(json);
+            _searcher.ImportIndexData(indexData);
+        }
+        #endregion
+
+        #region Index Management Buttons
+        [Button("Build Index from Embeddings", ButtonSizes.Large)]
         [GUIColor(0.3f, 0.8f, 0.3f)]
         [PropertyOrder(1)]
+        public async void BuildIndex()
+        {
+            try
+            {
+                Log("[RAGManager] Building index...");
+                var startTime = Time.realtimeSinceStartup;
+
+                await BuildIndexAsync();
+
+                var elapsed = Time.realtimeSinceStartup - startTime;
+                Log($"[RAGManager] ✅ Index built in {elapsed:F2}s: {IndexedChunks} chunks from {IndexedDocuments} docs");
+            }
+            catch (Exception ex)
+            {
+                LogError($"[RAGManager] Build failed: {ex.Message}");
+            }
+        }
+
+        [Button("Save Index to Disk", ButtonSizes.Large)]
+        [GUIColor(0.3f, 0.6f, 0.9f)]
+        [PropertyOrder(2)]
+        [EnableIf(nameof(IsIndexBuilt))]
+        public async void SaveIndex()
+        {
+            try
+            {
+                Log("[RAGManager] Saving index...");
+                await SaveIndexAsync();
+                Log($"[RAGManager] ✅ Index saved: {IndexFilePath}");
+            }
+            catch (Exception ex)
+            {
+                LogError($"[RAGManager] Save failed: {ex.Message}");
+            }
+        }
+
+        [Button("Load Index from Disk", ButtonSizes.Large)]
+        [GUIColor(0.9f, 0.6f, 0.3f)]
+        [PropertyOrder(3)]
+        public async void LoadIndex()
+        {
+            if (!File.Exists(IndexFilePath))
+            {
+                LogWarning($"[RAGManager] No index file at {IndexFilePath}");
+                return;
+            }
+
+            await AutoLoadIndexAsync();
+        }
+
+        [Button("Clear Index Memory", ButtonSizes.Medium)]
+        [GUIColor(0.9f, 0.5f, 0.2f)]
+        [PropertyOrder(4)]
+        [EnableIf(nameof(IsIndexBuilt))]
+        public void ClearIndexMemory()
+        {
+            _searcher?.Dispose();
+            _searcher = new DocumentSearcher(_service.Api, _service.Storage, _service.RagConfig);
+            Log("[RAGManager] Index cleared from memory");
+        }
+
+        [Button("Delete Index File", ButtonSizes.Medium)]
+        [GUIColor(1.0f, 0.3f, 0.3f)]
+        [PropertyOrder(5)]
+        public void DeleteIndexFile()
+        {
+            if (File.Exists(IndexFilePath))
+            {
+                File.Delete(IndexFilePath);
+                Log($"[RAGManager] Index file deleted");
+            }
+        }
+        #endregion
+
+        #region Testing Buttons
+        [Button("Ask Question (Text)", ButtonSizes.Large)]
+        [GUIColor(0.3f, 0.8f, 0.3f)]
+        [PropertyOrder(10)]
         [DisableIf(nameof(_isProcessing))]
         private async void AskQuestionText()
         {
@@ -106,41 +260,29 @@ namespace YanBrainAPI.RAG
 
             _cts?.Cancel();
             _cts = new CancellationTokenSource();
-
             _isProcessing = true;
             _lastLLMResponse = null;
 
             try
             {
                 _statusMessage = "Querying documents...";
-                
-                var searcher = _indexManager.GetSearcher();
-                var relevantDocs = await searcher.QueryAsync(userQuestion);
-
-                _cts.Token.ThrowIfCancellationRequested();
-
-                _statusMessage = "Merging context...";
-                var ragContext = string.Join("\n\n---\n\n", relevantDocs.Select(d => d.Text));
+                var relevantDocs = await _searcher.QueryAsync(userQuestion);
+                var docTexts = relevantDocs.Select(d => d.Text);
+                var ragContext = string.Join("\n\n---\n\n", docTexts);
 
                 _statusMessage = "Calling LLM...";
-                var payload = await _api.RagTextAsync(
-                    userQuestion, 
-                    ragContext, 
+                var payload = await _service.Api.RagTextAsync(
+                    userQuestion,
+                    ragContext,
                     systemPrompt,
                     additionalInstructions,
-                    maxResponseChars, 
+                    maxResponseChars,
                     _cts.Token
                 );
 
                 _lastLLMResponse = payload.TextResponse;
                 _statusMessage = "✓ Complete";
-
                 Log($"[RAGManager] Answer: {_lastLLMResponse}");
-            }
-            catch (OperationCanceledException)
-            {
-                _statusMessage = "Cancelled";
-                LogWarning("[RAGManager] Question cancelled");
             }
             catch (Exception ex)
             {
@@ -155,7 +297,7 @@ namespace YanBrainAPI.RAG
 
         [Button("Ask Question (Audio)", ButtonSizes.Large)]
         [GUIColor(0.3f, 0.6f, 0.9f)]
-        [PropertyOrder(2)]
+        [PropertyOrder(11)]
         [DisableIf(nameof(_isProcessing))]
         private async void AskQuestionAudio()
         {
@@ -163,55 +305,16 @@ namespace YanBrainAPI.RAG
 
             _cts?.Cancel();
             _cts = new CancellationTokenSource();
-
             _isProcessing = true;
             _lastLLMResponse = null;
             _lastAudioData = null;
 
             try
             {
-                _statusMessage = "Querying documents...";
+                _statusMessage = "Querying RAG...";
                 
-                var searcher = _indexManager.GetSearcher();
-                var relevantDocs = await searcher.QueryAsync(userQuestion);
-
-                Log($"[RAGManager] Query returned {relevantDocs?.Count ?? 0} documents");
-
-                _cts.Token.ThrowIfCancellationRequested();
-
-                if (relevantDocs == null || relevantDocs.Count == 0)
-                {
-                    LogError("[RAGManager] No relevant documents found");
-                    _statusMessage = "⚠ No relevant documents";
-                    return;
-                }
-
-                _statusMessage = "Merging context...";
-                var ragContext = string.Join("\n\n---\n\n", relevantDocs.Select(d => d.Text));
-
-                Log($"[RAGManager] Context length: {ragContext?.Length ?? 0} chars");
-                Log($"[RAGManager] Context preview: {ragContext?.Substring(0, Math.Min(100, ragContext.Length))}...");
-
-                if (string.IsNullOrWhiteSpace(ragContext))
-                {
-                    LogError("[RAGManager] Context is empty after merging");
-                    _statusMessage = "⚠ Empty context";
-                    return;
-                }
-
-                _statusMessage = "Calling RAG Audio (LLM + TTS)...";
-                
-                Log($"[RAGManager] Calling RagAudioAsync with:");
-                Log($"  - userPrompt: {userQuestion?.Length ?? 0} chars");
-                Log($"  - ragContext: {ragContext?.Length ?? 0} chars");
-                Log($"  - systemPrompt: {systemPrompt?.Length ?? 0} chars");
-                Log($"  - additionalInstructions: {additionalInstructions?.Length ?? 0} chars");
-                Log($"  - voiceId: '{voiceId}'");
-                Log($"  - maxResponseChars: {maxResponseChars}");
-
-                var payload = await _api.RagAudioAsync(
+                var (payload, ragTime, serverTime) = await QueryAsync(
                     userQuestion,
-                    ragContext,
                     systemPrompt,
                     additionalInstructions,
                     voiceId,
@@ -219,25 +322,18 @@ namespace YanBrainAPI.RAG
                     _cts.Token
                 );
 
-                _statusMessage = "Decoding audio...";
                 _lastAudioData = Convert.FromBase64String(payload.AudioBase64);
                 _lastLLMResponse = payload.TextResponse;
-
-                _statusMessage = "✓ Complete - Ready to play";
-
+                _statusMessage = "✓ Complete";
+                
+                var totalTime = ragTime + serverTime;
+                Log($"[RAGManager] 📊 RAG: {ragTime:F2}s | Server: {serverTime:F2}s | Total: {totalTime:F2}s");
                 Log($"[RAGManager] Answer: {_lastLLMResponse}");
-                Log($"[RAGManager] Audio ready: {_lastAudioData.Length} bytes");
-            }
-            catch (OperationCanceledException)
-            {
-                _statusMessage = "Cancelled";
-                LogWarning("[RAGManager] Question cancelled");
             }
             catch (Exception ex)
             {
                 _statusMessage = $"Error: {ex.Message}";
                 LogError($"[RAGManager] Failed: {ex.Message}");
-                LogError($"[RAGManager] Stack trace: {ex.StackTrace}");
             }
             finally
             {
@@ -247,30 +343,42 @@ namespace YanBrainAPI.RAG
 
         [Button("Play Audio", ButtonSizes.Large)]
         [GUIColor(0.9f, 0.6f, 0.3f)]
-        [PropertyOrder(3)]
+        [PropertyOrder(12)]
         [EnableIf(nameof(HasAudioData))]
         private async void PlayAudio()
         {
-            if (_lastAudioData == null || _lastAudioData.Length == 0)
-            {
-                LogError("[RAGManager] No audio data available");
-                return;
-            }
+            if (_lastAudioData == null) return;
 
             try
             {
                 _statusMessage = "♪ Playing audio...";
-                Log($"[RAGManager] Playing {_lastAudioData.Length} bytes of audio");
-
                 await _audioPlayer.PlayAudioAsync(_lastAudioData);
-
                 _statusMessage = "✓ Playback complete";
-                Log("[RAGManager] Audio playback finished");
             }
             catch (Exception ex)
             {
                 _statusMessage = $"Playback error: {ex.Message}";
                 LogError($"[RAGManager] Playback failed: {ex.Message}");
+            }
+        }
+        #endregion
+
+        #region Helpers
+        private async Task AutoLoadIndexAsync()
+        {
+            try
+            {
+                Log("[RAGManager] Auto-loading index...");
+                var startTime = Time.realtimeSinceStartup;
+
+                await LoadIndexAsync();
+
+                var elapsed = Time.realtimeSinceStartup - startTime;
+                Log($"[RAGManager] ✅ Index loaded in {elapsed:F2}s: {IndexedChunks} chunks");
+            }
+            catch (Exception ex)
+            {
+                LogError($"[RAGManager] Auto-load failed: {ex.Message}");
             }
         }
 
@@ -282,17 +390,10 @@ namespace YanBrainAPI.RAG
                 return false;
             }
 
-            if (!IsIndexReady)
+            if (!IsIndexBuilt)
             {
-                LogError("[RAGManager] Index not ready. Use IndexManager to build/load index first.");
+                LogError("[RAGManager] Index not ready");
                 _statusMessage = "⚠ Index not ready";
-                return false;
-            }
-
-            if (IndexedDocuments == 0)
-            {
-                LogWarning("[RAGManager] No documents indexed.");
-                _statusMessage = "⚠ No documents";
                 return false;
             }
 
@@ -300,5 +401,37 @@ namespace YanBrainAPI.RAG
         }
 
         private bool HasAudioData() => _lastAudioData != null && _lastAudioData.Length > 0;
+
+        private string CalculateIndexSize()
+        {
+            if (!IsIndexBuilt || _searcher == null) return "N/A";
+
+            var chunks = IndexedChunks;
+            var dimension = _searcher.GetDimension();
+            var totalBytes = (chunks * dimension * 4) + (chunks * 8);
+
+            return $"{totalBytes / 1024f / 1024f:F2} MB";
+        }
+
+        private string GetIndexFileStatus()
+        {
+            if (_service == null || string.IsNullOrEmpty(IndexFilePath))
+                return "Not initialized";
+
+            if (!File.Exists(IndexFilePath))
+                return "No saved index";
+
+            var fileInfo = new FileInfo(IndexFilePath);
+            var sizeMB = fileInfo.Length / 1024f / 1024f;
+            var age = DateTime.Now - fileInfo.LastWriteTime;
+
+            if (age.TotalDays >= 1)
+                return $"{sizeMB:F2} MB ({age.TotalDays:F0}d ago)";
+            else if (age.TotalHours >= 1)
+                return $"{sizeMB:F2} MB ({age.TotalHours:F0}h ago)";
+            else
+                return $"{sizeMB:F2} MB ({age.TotalMinutes:F0}m ago)";
+        }
+        #endregion
     }
 }
